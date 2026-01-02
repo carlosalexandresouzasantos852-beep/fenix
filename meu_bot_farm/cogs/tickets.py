@@ -1,257 +1,243 @@
-# =========================================================
-# BOT FARM KORTE — AUTOMÁTICO
-# Python 3.11+ | discord.py 2.4+
-# =========================================================
-
 import discord
 import asyncio
-import json
-import os
-from datetime import datetime
-from discord.ext import commands, tasks
-from discord.ui import View, Modal, TextInput
+from discord.ext import commands
+from discord.ui import View, Button, Select, Modal, TextInput
+from discord import app_commands
+import json, os
 
-# ================== CONFIG ==================
-META_SEMANAL = 1500
-MAX_ADV = 5
+CONFIG_PATH = "meu_bot_farm/data/config_farm.json"
 
-PASTA = "meu_bot_farm/data"
-os.makedirs(PASTA, exist_ok=True)
-
-ENTREGAS_FILE = f"{PASTA}/entregas.json"
-ADV_FILE = f"{PASTA}/advs.json"
-
-GIF_PAINEL = "https://cdn.discordapp.com/attachments/1266573285236408363/1452178207255040082/Adobe_Express_-_VID-20251221-WA0034.gif"
-
-CARGOS_VALIDOS = [
-    "gerente geral", "gerente de elite", "gerente de recrutamento",
-    "gerente de farm", "elite", "recrutador", "membro", "aviãozinho"
-]
-
-# ================== JSON ==================
-def load_json(path, default):
-    if not os.path.exists(path):
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(default, f, indent=4, ensure_ascii=False)
-    with open(path, "r", encoding="utf-8") as f:
+# ================= UTIL =================
+def load_config():
+    if not os.path.exists(CONFIG_PATH):
+        return {}
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def save_json(path, data):
-    with open(path, "w", encoding="utf-8") as f:
+def save_config(data):
+    os.makedirs("meu_bot_farm/data", exist_ok=True)
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
-# ================== VIEW DE ANÁLISE ==================
-class AnaliseView(View):
-    def __init__(self, user, qtd, meta, canal_aceitos, canal_recusados, canal_adv):
-        super().__init__(timeout=None)
-        self.user = user
-        self.qtd = qtd
-        self.meta = meta
-        self.canal_aceitos = canal_aceitos
-        self.canal_recusados = canal_recusados
-        self.canal_adv = canal_adv
+# ================= MODAL =================
+class EnvioFarmModal(Modal):
+    def __init__(self, bot, cargo_nome, painel_view):
+        super().__init__(title="📦 Envio de Farm-KORTE")
+        self.bot = bot
+        self.cargo_nome = cargo_nome
+        self.painel_view = painel_view
 
-    @discord.ui.button(label="✅ ACEITAR", style=discord.ButtonStyle.success)
-    async def aceitar(self, interaction: discord.Interaction, _):
-        entregas = load_json(ENTREGAS_FILE, {})
-        advs = load_json(ADV_FILE, {})
+        self.quantidade = TextInput(
+            label="Quantidade entregue",
+            placeholder="Ex: 1500",
+            required=True
+        )
+        self.para_quem = TextInput(
+            label="Para quem você entregou?",
+            placeholder="Nome ou ID",
+            required=True
+        )
 
-        total = entregas.get(str(self.user.id), 0) + self.qtd
-        entregas[str(self.user.id)] = total
-
-        embed = interaction.message.embeds[0]
-        embed.set_field_at(4, name="📊 Status da Meta", value="✅ Meta concluída", inline=False)
-
-        # Remoção automática de ADV por compensação
-        if str(self.user.id) in advs and total >= self.meta * 2:
-            advs.pop(str(self.user.id))
-            canal = interaction.guild.get_channel(self.canal_adv)
-            if canal:
-                msg = await canal.send(f"🔄 ADV removido por compensação — {self.user.mention}")
-                await asyncio.sleep(10)
-                await msg.delete()
-
-        canal = interaction.guild.get_channel(self.canal_aceitos)
-        if canal:
-            await canal.send(embed=embed)
-
-        save_json(ENTREGAS_FILE, entregas)
-        save_json(ADV_FILE, advs)
-
-        await interaction.message.delete()
-        await interaction.response.send_message("Entrega aceita.", ephemeral=True)
-
-    @discord.ui.button(label="❌ RECUSAR", style=discord.ButtonStyle.danger)
-    async def recusar(self, interaction: discord.Interaction, _):
-        embed = interaction.message.embeds[0]
-        embed.set_field_at(4, name="📊 Status da Meta", value="❌ Entrega recusada", inline=False)
-
-        canal = interaction.guild.get_channel(self.canal_recusados)
-        if canal:
-            await canal.send(embed=embed)
-
-        await interaction.message.delete()
-        await interaction.response.send_message("Entrega recusada.", ephemeral=True)
-
-# ================== MODAL ==================
-class EntregaModal(Modal):
-    def __init__(self, canal_analise, canal_aceitos, canal_recusados, canal_adv):
-        super().__init__(title="Entrega de Farm – KORTE")
-        self.canal_analise = canal_analise
-        self.canal_aceitos = canal_aceitos
-        self.canal_recusados = canal_recusados
-        self.canal_adv = canal_adv
-
-        self.qtd = TextInput(label="Quantidade entregue", required=True)
-        self.para = TextInput(label="Entregou para quem?", required=True)
-        self.data = TextInput(label="Data (DD/MM)", required=True)
-
-        self.add_item(self.qtd)
-        self.add_item(self.para)
-        self.add_item(self.data)
+        self.add_item(self.quantidade)
+        self.add_item(self.para_quem)
 
     async def on_submit(self, interaction: discord.Interaction):
-        await interaction.response.defer()  # Fecha o modal corretamente
+        config = load_config()
+        metas = config.get("metas", {})
 
-        try:
-            qtd = int(self.qtd.value)
-        except:
-            return await interaction.followup.send("Quantidade inválida.", ephemeral=True)
+        quantidade = int(self.quantidade.value)
+        meta = metas[self.cargo_nome]
 
-        if qtd >= META_SEMANAL:
+        if quantidade >= meta:
             status = "✅ Meta concluída"
+            if quantidade > meta:
+                status += f" (+{quantidade - meta})"
         else:
-            status = f"🕒 Faltam {META_SEMANAL - qtd} para a meta"
+            status = f"❌ Faltam {meta - quantidade}"
+
+        categoria = interaction.guild.get_channel(config["categoria_analise"])
+
+        canal = await interaction.guild.create_text_channel(
+            name=f"farm-{interaction.user.name}",
+            category=categoria
+        )
 
         embed = discord.Embed(
-            title="📦 ENTREGA DE FARM – KORTE",
-            color=discord.Color.orange()
+            title="📦 Ticket de Farm-KORTE",
+            color=0xf1c40f
         )
-        embed.add_field(name="👤 Quem entregou", value=interaction.user.mention, inline=False)
-        embed.add_field(name="📦 Quantidade", value=str(qtd), inline=False)
-        embed.add_field(name="📍 Entregou para", value=self.para.value, inline=False)
-        embed.add_field(name="📅 Data", value=self.data.value, inline=False)
-        embed.add_field(name="📊 Status da Meta", value=status, inline=False)
+        embed.add_field(name="👤 Nome", value=interaction.user.mention, inline=False)
+        embed.add_field(name="🎖️ Cargo", value=self.cargo_nome, inline=True)
+        embed.add_field(name="📦 Quantidade", value=str(quantidade), inline=True)
+        embed.add_field(name="🎯 Meta", value=str(meta), inline=True)
+        embed.add_field(name="📊 Status", value=status, inline=False)
+        embed.add_field(name="📍 Quem Recebeu", value=self.para_quem.value, inline=False)
 
-        canal = interaction.guild.get_channel(self.canal_analise)
-        if canal:
-            await canal.send(
-                embed=embed,
-                view=AnaliseView(
-                    interaction.user,
-                    qtd,
-                    META_SEMANAL,
-                    self.canal_aceitos,
-                    self.canal_recusados,
-                    self.canal_adv
-                )
-            )
-
-        msg = await interaction.followup.send(
-            f"{interaction.user.mention}, sua entrega foi enviada para análise da **Staff KORTE**.",
-            ephemeral=True
+        await canal.send(
+            embed=embed,
+            view=AnaliseView(self.bot, embed)
         )
-        await asyncio.sleep(30)
-        await msg.delete()
 
-# ================== PAINEL ==================
-class PainelView(View):
-    def __init__(self, canal_analise, canal_aceitos, canal_recusados, canal_adv):
+        # Volta o painel para selecionar cargo
+        self.painel_view.reset_select()
+
+        await interaction.response.send_message(
+            "📨 Seu ticket foi enviado para análise da **staff-KORTE**.",
+            ephemeral=True,
+            delete_after=3
+        )
+
+# ================= VIEW ANALISE =================
+class AnaliseView(View):
+    def __init__(self, bot, embed):
         super().__init__(timeout=None)
-        self.canal_analise = canal_analise
-        self.canal_aceitos = canal_aceitos
-        self.canal_recusados = canal_recusados
-        self.canal_adv = canal_adv
+        self.bot = bot
+        self.embed = embed
+        self.finalizado = False
 
-    @discord.ui.button(label="📦 ENTREGAR FARM", style=discord.ButtonStyle.green)
-    async def entregar(self, interaction: discord.Interaction, _):
-        await interaction.response.send_modal(
-            EntregaModal(
-                self.canal_analise,
-                self.canal_aceitos,
-                self.canal_recusados,
-                self.canal_adv
-            )
+    @discord.ui.button(label="✅ Aceitar", style=discord.ButtonStyle.green, custom_id="btn_aceitar")
+    async def aceitar(self, interaction: discord.Interaction, button: Button):
+        if self.finalizado:
+            return
+        self.finalizado = True
+
+        config = load_config()
+        canal_aceitos = interaction.guild.get_channel(config["canal_aceitos"])
+
+        await canal_aceitos.send(embed=self.embed)
+        await interaction.channel.delete()
+        await interaction.response.send_message("Ticket aceito!", ephemeral=True)
+
+    @discord.ui.button(label="❌ Recusar", style=discord.ButtonStyle.red, custom_id="btn_recusar")
+    async def recusar(self, interaction: discord.Interaction, button: Button):
+        if self.finalizado:
+            return
+        self.finalizado = True
+
+        config = load_config()
+        canal_recusados = interaction.guild.get_channel(config["canal_recusados"])
+
+        await canal_recusados.send(embed=self.embed)
+        await interaction.channel.delete()
+        await interaction.response.send_message("Ticket recusado!", ephemeral=True)
+
+# ================= SELECT =================
+class CargoSelect(Select):
+    def __init__(self, bot):
+        config = load_config()
+        metas = config.get("metas", {})
+
+        options = [discord.SelectOption(label=cargo) for cargo in metas.keys()]
+        super().__init__(
+            placeholder="Selecione seu cargo",
+            options=options,
+            custom_id="select_cargo"
+        )
+        self.bot = bot
+        self.valor_selecionado = None
+
+    async def callback(self, interaction: discord.Interaction):
+        self.valor_selecionado = self.values[0]
+        await interaction.response.send_message(
+            f"✅ Cargo **{self.valor_selecionado}** selecionado. Clique em **Iniciar Farm** para enviar.",
+            ephemeral=True,
+            delete_after=3
         )
 
-# ================== COG ==================
-class KorteFarm(commands.Cog):
+# ================= BOTÃO INICIAR FARM =================
+class IniciarFarmButton(Button):
+    def __init__(self, bot, select_cargo):
+        super().__init__(label="Iniciar Farm-KORTE", style=discord.ButtonStyle.blurple, custom_id="btn_iniciar_farm")
+        self.bot = bot
+        self.select_cargo = select_cargo
+
+    async def callback(self, interaction: discord.Interaction):
+        if not self.select_cargo.valor_selecionado:
+            await interaction.response.send_message(
+                "❌ Selecione um cargo antes de iniciar a farm.",  
+                ephemeral=True,
+                delete_after=3
+            )
+            return
+        await interaction.response.send_modal(EnvioFarmModal(self.bot, self.select_cargo.valor_selecionado, self.view))
+
+# ================= PAINEL =================
+class PainelFarmView(View):
+    def __init__(self, bot):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.select_cargo = CargoSelect(bot)
+        self.add_item(self.select_cargo)
+        self.add_item(IniciarFarmButton(bot, self.select_cargo))
+
+    def reset_select(self):
+        # Remove e recria o select para resetar visualmente
+        self.remove_item(self.select_cargo)
+        self.select_cargo = CargoSelect(self.bot)
+        self.add_item(self.select_cargo)
+
+# ================= COG TICKETS =================
+class Tickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.analise_semanal.start()
-        self.reset_semanal.start()
+        bot.add_view(PainelFarmView(bot))
 
-    @commands.command()
-    @commands.has_permissions(manage_guild=True)
-    async def ticket(self, ctx, meta: int, canal_analise: discord.TextChannel, canal_aceitos: discord.TextChannel, canal_recusados: discord.TextChannel, canal_adv: discord.TextChannel):
-        global META_SEMANAL
-        META_SEMANAL = meta  # Atualiza a meta semanal
-
+    @commands.command(name="painelfarm")
+    async def painel(self, ctx):
         embed = discord.Embed(
-            title="📦 ENTREGA DE FARM – KORTE",
-            description="Clique no botão abaixo para entregar seu farming.",
-            color=discord.Color.blurple()
+            title="📦 Painel Entrega de Farm-KORTE",
+            description="Selecione seu cargo e envie sua meta de farm.",
+            color=0x2ecc71
         )
-        embed.set_image(url=GIF_PAINEL)
-
-        await ctx.send(
-            embed=embed,
-            view=PainelView(
-                canal_analise.id,
-                canal_aceitos.id,
-                canal_recusados.id,
-                canal_adv.id
-            )
+        embed.set_image(
+            url="https://cdn.discordapp.com/attachments/1266573285236408363/1452178207255040082/Adobe_Express_-_VID-20251221-WA0034.gif"
         )
-        await ctx.message.delete()
+        embed.set_footer(text="Sistema de Farm • Automático")
 
-    @commands.command(name="advfarm")
-    async def advfarm(self, ctx):
-        advs = load_json(ADV_FILE, {})
-        if not advs:
-            return await ctx.send("✅ Nenhuma advertência ativa.")
-        texto = "\n".join([f"<@{u}> — {q} ADV" for u, q in advs.items()])
-        await ctx.send(f"⚠️ **Advertências registradas:**\n{texto}")
+        await ctx.send(embed=embed, view=PainelFarmView(self.bot))
 
-    # ================== TASKS ==================
-    @tasks.loop(hours=24)
-    async def analise_semanal(self):
-        if datetime.now().weekday() != 5:  # SÁBADO
+# ================= GERENCIADOR DE CARGOS =================
+class CargoManager(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+
+    @app_commands.command(name="addcargo", description="Adicionar cargo e meta")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def addcargo(self, interaction: discord.Interaction, nome: str, meta: int):
+        config = load_config()
+        metas = config.get("metas", {})
+
+        if nome in metas:
+            await interaction.response.send_message("❌ Cargo já existe.", ephemeral=True)
             return
 
-        for guild in self.bot.guilds:
-            entregas = load_json(ENTREGAS_FILE, {})
-            advs = load_json(ADV_FILE, {})
+        metas[nome] = meta
+        config["metas"] = metas
+        save_config(config)
 
-            canal_adv = next(
-                (c for c in guild.text_channels if "adv" in c.name.lower()),
-                None
-            )
+        await interaction.response.send_message(
+            f"✅ Cargo **{nome}** adicionado com meta **{meta}**.", ephemeral=True
+        )
 
-            for member in guild.members:
-                if member.bot:
-                    continue
-                if not any(r.name.lower() in CARGOS_VALIDOS for r in member.roles):
-                    continue
+    @app_commands.command(name="removecargo", description="Remover cargo")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def removecargo(self, interaction: discord.Interaction, nome: str):
+        config = load_config()
+        metas = config.get("metas", {})
 
-                if str(member.id) not in entregas:
-                    advs[str(member.id)] = advs.get(str(member.id), 0) + 1
-                    if canal_adv:
-                        msg = await canal_adv.send(f"⚠️ ADV aplicado — {member.mention}")
-                        await asyncio.sleep(10)
-                        await msg.delete()
-
-                    if advs[str(member.id)] >= MAX_ADV:
-                        await member.kick(reason="5 advertências acumuladas")
-
-            save_json(ADV_FILE, advs)
-
-    @tasks.loop(hours=24)
-    async def reset_semanal(self):
-        if datetime.now().weekday() != 0:  # SEGUNDA
+        if nome not in metas:
+            await interaction.response.send_message("❌ Cargo não existe.", ephemeral=True)
             return
-        save_json(ENTREGAS_FILE, {})
 
-# ================== SETUP ==================
+        del metas[nome]
+        config["metas"] = metas
+        save_config(config)
+
+        await interaction.response.send_message(
+            f"🗑️ Cargo **{nome}** removido.", ephemeral=True
+        )
+
+# ================= SETUP =================
 async def setup(bot):
-    await bot.add_cog(KorteFarm(bot))
+    await bot.add_cog(Tickets(bot))
+    await bot.add_cog(CargoManager(bot))

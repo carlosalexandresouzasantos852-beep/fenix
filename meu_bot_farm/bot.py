@@ -1,30 +1,45 @@
-import os
 import discord
+import asyncio
 from discord.ext import commands
 from config import BOT_PREFIX, TOKEN
-from utils.logger import setup_logger
 
-def start_bot():
-    setup_logger()
+intents = discord.Intents.default()
+intents.members = True
+intents.message_content = True
 
-    intents = discord.Intents.default()
-    intents.members = True
-    intents.message_content = True
+bot = commands.Bot(
+    command_prefix=BOT_PREFIX,
+    intents=intents
+)
 
-    bot = commands.Bot(command_prefix=BOT_PREFIX, intents=intents)
+EXTENSIONS = [
+    "cogs.tickets",
+    "cogs.farm",
+    "cogs.staff",
+    "cogs.cargos",
+    "cogs.metas",
+    "cogs.config_farm",
+]
 
-    # Carregar extensões
-    EXTENSIONS = [
-        "cogs.tickets",
-        "cogs.farm",
-        "cogs.cargos"
-    ]
+@bot.event
+async def on_ready():
+    # 🔥 SINCRONIZA SLASH NO MOMENTO CERTO
+    try:
+        synced = await bot.tree.sync()
+        print(f"🔄 Slash sincronizados: {len(synced)}")
+    except Exception as e:
+        print(f"❌ Erro ao sincronizar slash: {e}")
 
+    print(f"🔥 Bot online como {bot.user} (ID: {bot.user.id})")
+
+async def main():
     for ext in EXTENSIONS:
-        bot.load_extension(ext)
+        try:
+            await bot.load_extension(ext)
+            print(f"[COG] Carregado: {ext}")
+        except Exception as e:
+            print(f"[ERRO] Falha ao carregar {ext}: {e}")
 
-    @bot.event
-    async def on_ready():
-        print(f"Bot online como {bot.user} (ID: {bot.user.id})")
+    await bot.start(TOKEN)
 
-    bot.run(TOKEN)
+asyncio.run(main())
