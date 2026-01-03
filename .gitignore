@@ -3,3 +3,6 @@ __pycache__/
 .env
 .vscode/
 .idea/
+config.py
+meu_bot_farm/config.py
+.env
