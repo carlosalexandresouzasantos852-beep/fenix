@@ -1,3 +1,6 @@
+import os
+os.environ["DISCORD_DISABLE_VOICE"] = "1"
+
 import discord, json, os
 from discord.ext import commands, tasks
 from datetime import datetime

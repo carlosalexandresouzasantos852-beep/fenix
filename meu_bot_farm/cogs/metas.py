@@ -1,3 +1,6 @@
+import os
+os.environ["DISCORD_DISABLE_VOICE"] = "1"
+
 import discord
 from discord.ext import commands
 import json, os

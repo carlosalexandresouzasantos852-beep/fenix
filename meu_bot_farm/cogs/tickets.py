@@ -1,3 +1,6 @@
+import os
+os.environ["DISCORD_DISABLE_VOICE"] = "1"
+
 import discord
 import asyncio
 from discord.ext import commands
