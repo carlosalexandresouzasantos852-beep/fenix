@@ -4,7 +4,7 @@ os.environ["DISCORD_DISABLE_VOICE"] = "1"
 import discord
 import asyncio
 from discord.ext import commands
-from config import BOT_PREFIX, TOKEN
+from meu_bot_farm.config import BOT_PREFIX, TOKEN  # ✅ CORRETO
 
 intents = discord.Intents.default()
 intents.members = True
@@ -16,17 +16,16 @@ bot = commands.Bot(
 )
 
 EXTENSIONS = [
-    "cogs.tickets",
-    "cogs.farm",
-    "cogs.staff",
-    "cogs.cargos",
-    "cogs.metas",
-    "cogs.config_farm",
+    "meu_bot_farm.cogs.tickets",
+    "meu_bot_farm.cogs.farm",
+    "meu_bot_farm.cogs.staff",
+    "meu_bot_farm.cogs.cargos",
+    "meu_bot_farm.cogs.metas",
+    "meu_bot_farm.cogs.config_farm",
 ]
 
 @bot.event
 async def on_ready():
-    # 🔥 SINCRONIZA SLASH NO MOMENTO CERTO
     try:
         synced = await bot.tree.sync()
         print(f"🔄 Slash sincronizados: {len(synced)}")
