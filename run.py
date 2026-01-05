@@ -6,31 +6,36 @@ from discord.ext import commands
 from web import keep_alive
 
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
+
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
 
 COGS = [
-    "meu_bot_farm.cogs.farm",
-    "meu_bot_farm.cogs.tickets",
-    "meu_bot_farm.cogs.metas",
-    "meu_bot_farm.cogs.staff",
+    "meu_bot_farm.cogs.config_farm",  # slash
+    "meu_bot_farm.cogs.staff",        # slash
+    "meu_bot_farm.cogs.tickets",      # prefixo (painel)
     "meu_bot_farm.cogs.cargos",
+    "meu_bot_farm.cogs.farm"
 ]
-
-async def load_cogs():
-    for cog in COGS:
-        try:
-            await bot.load_extension(cog)
-            print(f"[OK] Cog carregado: {cog}")
-        except Exception as e:
-            print(f"[ERRO] Falha ao carregar {cog}: {e}")
 
 @bot.event
 async def setup_hook():
-    await load_cogs()
+    for cog in COGS:
+        try:
+            await bot.load_extension(cog)
+            print(f"✅ Cog carregado: {cog}")
+        except Exception as e:
+            print(f"❌ Erro ao carregar {cog}: {e}")
+
+    # 🔥 ISSO GARANTE QUE OS SLASH VOLTEM
+    synced = await bot.tree.sync()
+    print(f"🔁 {len(synced)} slash commands sincronizados")
 
 @bot.event
 async def on_ready():
-    print(f"🔥 Bot ONLINE como {bot.user}")
+    print(f"🤖 Bot online como {bot.user} ({bot.user.id})")
 
-keep_alive()  # mantém a porta aberta no Render
+keep_alive()
 bot.run(os.getenv("DISCORD_TOKEN"))
