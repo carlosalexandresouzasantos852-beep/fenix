@@ -4,9 +4,10 @@ os.environ["DISCORD_DISABLE_VOICE"] = "1"
 import discord
 from discord.ext import commands
 from discord import app_commands
-import json, os
+import json
 
 CONFIG_PATH = "meu_bot_farm/data/config_farm.json"
+
 
 def load_config():
     if not os.path.exists(CONFIG_PATH):
@@ -14,13 +15,15 @@ def load_config():
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
+
 def save_config(data):
     os.makedirs("meu_bot_farm/data", exist_ok=True)
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
+        json.dump(data, f, indent=4, ensure_ascii=False)
+
 
 class ConfigFarm(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
 
     @app_commands.command(
@@ -62,5 +65,6 @@ class ConfigFarm(commands.Cog):
             ephemeral=True
         )
 
-async def setup(bot):
+
+async def setup(bot: commands.Bot):
     await bot.add_cog(ConfigFarm(bot))

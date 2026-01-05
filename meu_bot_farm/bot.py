@@ -9,9 +9,13 @@ bot = commands.Bot(
     intents=intents
 )
 
-# Carregar cogs
 async def load_cogs():
-    for cog in ["meu_bot_farm.cogs.farm"]:
+    cogs = [
+        "meu_bot_farm.cogs.farm",
+        "meu_bot_farm.cogs.config_farm"
+    ]
+
+    for cog in cogs:
         try:
             await bot.load_extension(cog)
             print(f"[INFO] Cog carregado: {cog}")
@@ -21,12 +25,11 @@ async def load_cogs():
 @bot.event
 async def setup_hook():
     await load_cogs()
+    synced = await bot.tree.sync()
+    print(f"[INFO] {len(synced)} slash commands sincronizados")
 
 @bot.event
 async def on_ready():
-    # 🔥 SINCRONIZA OS SLASH COMMANDS
-    synced = await bot.tree.sync()
-    print(f"[INFO] {len(synced)} slash commands sincronizados")
     print(f"[INFO] Bot ON como {bot.user} (ID: {bot.user.id})")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
