@@ -1,6 +1,11 @@
+import os
+os.environ["DISCORD_DISABLE_VOICE"] = "1"
+
 import discord
 from discord.ext import commands
-import os
+from meu_bot_farm.utils.logger import setup_logger
+
+logger = setup_logger("BOT")
 
 intents = discord.Intents.all()
 
@@ -12,25 +17,27 @@ bot = commands.Bot(
 async def load_cogs():
     cogs = [
         "meu_bot_farm.cogs.farm",
-        "meu_bot_farm.cogs.config_farm"
+        "meu_bot_farm.cogs.config_farm",
+        "meu_bot_farm.cogs.cargos",
+        "meu_bot_farm.cogs.staff"
     ]
 
     for cog in cogs:
         try:
             await bot.load_extension(cog)
-            print(f"[INFO] Cog carregado: {cog}")
+            logger.info(f"Cog carregado: {cog}")
         except Exception as e:
-            print(f"[ERRO] Falha ao carregar {cog}: {e}")
+            logger.error(f"Erro ao carregar {cog}: {e}")
 
 @bot.event
 async def setup_hook():
     await load_cogs()
     synced = await bot.tree.sync()
-    print(f"[INFO] {len(synced)} slash commands sincronizados")
+    logger.info(f"{len(synced)} slash commands sincronizados")
 
 @bot.event
 async def on_ready():
-    print(f"[INFO] Bot ON como {bot.user} (ID: {bot.user.id})")
+    logger.info(f"Bot ONLINE como {bot.user} | ID: {bot.user.id}")
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 bot.run(TOKEN)
