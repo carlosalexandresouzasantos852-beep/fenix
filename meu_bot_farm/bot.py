@@ -20,6 +20,7 @@ async def load_cogs():
         "meu_bot_farm.cogs.config_farm",
         "meu_bot_farm.cogs.cargos",
         "meu_bot_farm.cogs.staff"
+        "meu_bot_farm.cogs.adv_automatico"
     ]
 
     for cog in cogs:
