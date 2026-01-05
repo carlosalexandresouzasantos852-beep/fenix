@@ -3,7 +3,11 @@ from discord.ext import commands
 import os
 
 intents = discord.Intents.all()
-bot = commands.Bot(command_prefix="!", intents=intents)
+
+bot = commands.Bot(
+    command_prefix="!",
+    intents=intents
+)
 
 # Carregar cogs
 async def load_cogs():
@@ -15,14 +19,15 @@ async def load_cogs():
             print(f"[ERRO] Falha ao carregar {cog}: {e}")
 
 @bot.event
-async def on_ready():
-    print(f"[INFO] Bot ON como {bot.user} (ID: {bot.user.id})")
-
-# Rodar cogs
-@bot.event
 async def setup_hook():
     await load_cogs()
 
-# Rodar bot
+@bot.event
+async def on_ready():
+    # 🔥 SINCRONIZA OS SLASH COMMANDS
+    synced = await bot.tree.sync()
+    print(f"[INFO] {len(synced)} slash commands sincronizados")
+    print(f"[INFO] Bot ON como {bot.user} (ID: {bot.user.id})")
+
 TOKEN = os.getenv("DISCORD_TOKEN")
 bot.run(TOKEN)
