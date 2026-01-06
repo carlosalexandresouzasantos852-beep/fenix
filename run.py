@@ -14,4 +14,4 @@ async def on_ready():
     await bot.load_extension("meu_bot_farm.cogs.tickets")
 
 TOKEN = os.getenv("TOKEN")
-bot.run(TOKEN)
+print("TOKEN carregado?", bool(TOKEN))
