@@ -3,6 +3,7 @@ from discord.ext import commands
 import json
 import os
 from datetime import datetime
+import traceback
 
 CONFIG = "meu_bot_farm/data/config_farm.json"
 
@@ -25,59 +26,76 @@ class AnaliseView(discord.ui.View):
 
     @discord.ui.button(label="✅ Aceitar", style=discord.ButtonStyle.success)
     async def aceitar(self, interaction: discord.Interaction, _):
-        config = load_config()
-        if not config:
-            await interaction.response.send_message("❌ Configuração não encontrada.", ephemeral=True)
-            return
+        try:
+            config = load_config()
+            if not config:
+                await interaction.response.send_message("❌ Configuração não encontrada.", ephemeral=True)
+                return
 
-        qtd = self.dados["quantidade"]
-        meta = self.dados["meta"]
-        faltam = meta - qtd
+            qtd = self.dados["quantidade"]
+            meta = self.dados["meta"]
+            faltam = meta - qtd
+            status_meta = "✅ Meta concluída" if faltam <= 0 else f"⏳ Faltam {faltam} para a meta"
 
-        status_meta = "✅ Meta concluída" if faltam <= 0 else f"⏳ Faltam {faltam} para a meta"
+            embed = discord.Embed(
+                title="📦 ENTREGA DE FARM – KORTE",
+                color=discord.Color.green(),
+                timestamp=datetime.now()
+            )
+            embed.add_field(name="🧍 Quem entregou", value=self.dados["quem"], inline=False)
+            embed.add_field(name="🎖 Cargo", value=self.dados["cargo"], inline=False)
+            embed.add_field(name="📦 Quantidade", value=str(qtd), inline=False)
+            embed.add_field(name="📍 Entregou para", value=self.dados["para"], inline=False)
+            embed.add_field(name="📅 Data", value=self.dados["data"], inline=False)
+            embed.add_field(name="📊 Status da Meta", value=status_meta, inline=False)
+            embed.add_field(name="⏱️ Prazo", value="24 horas", inline=False)
 
-        embed = discord.Embed(
-            title="📦 ENTREGA DE FARM – KORTE",
-            color=discord.Color.green(),
-            timestamp=datetime.now()
-        )
-        embed.add_field(name="🧍 Quem entregou", value=self.dados["quem"], inline=False)
-        embed.add_field(name="🎖 Cargo", value=self.dados["cargo"], inline=False)
-        embed.add_field(name="📦 Quantidade", value=str(qtd), inline=False)
-        embed.add_field(name="📍 Entregou para", value=self.dados["para"], inline=False)
-        embed.add_field(name="📅 Data", value=self.dados["data"], inline=False)
-        embed.add_field(name="📊 Status da Meta", value=status_meta, inline=False)
-        embed.add_field(name="⏱️ Prazo", value="24 horas", inline=False)
+            canal_aceitos = self.bot.get_channel(config.get("canal_aceitos"))
+            if not canal_aceitos:
+                await interaction.response.send_message("❌ Canal de aceitos não encontrado.", ephemeral=True)
+                return
 
-        canal_aceitos = self.bot.get_channel(config["canal_aceitos"])
-        await canal_aceitos.send(embed=embed)
+            await canal_aceitos.send(embed=embed)
+            await interaction.channel.delete()
 
-        await interaction.channel.delete()
+        except Exception:
+            traceback.print_exc()
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ Erro interno ao aceitar.", ephemeral=True)
 
     @discord.ui.button(label="❌ Recusar", style=discord.ButtonStyle.danger)
     async def recusar(self, interaction: discord.Interaction, _):
-        config = load_config()
-        if not config:
-            await interaction.response.send_message("❌ Configuração não encontrada.", ephemeral=True)
-            return
+        try:
+            config = load_config()
+            if not config:
+                await interaction.response.send_message("❌ Configuração não encontrada.", ephemeral=True)
+                return
 
-        embed = discord.Embed(
-            title="❌ ENTREGA RECUSADA",
-            color=discord.Color.red(),
-            timestamp=datetime.now()
-        )
-        embed.add_field(name="🧍 Quem entregou", value=self.dados["quem"], inline=False)
-        embed.add_field(name="🎖 Cargo", value=self.dados["cargo"], inline=False)
-        embed.add_field(name="📦 Quantidade", value=str(self.dados["quantidade"]), inline=False)
-        embed.add_field(name="📍 Entregou para", value=self.dados["para"], inline=False)
-        embed.add_field(name="📅 Data", value=self.dados["data"], inline=False)
-        embed.add_field(name="📊 Status", value="❌ Entrega recusada", inline=False)
-        embed.add_field(name="⏱️ Prazo", value="10 horas", inline=False)
+            embed = discord.Embed(
+                title="❌ ENTREGA RECUSADA",
+                color=discord.Color.red(),
+                timestamp=datetime.now()
+            )
+            embed.add_field(name="🧍 Quem entregou", value=self.dados["quem"], inline=False)
+            embed.add_field(name="🎖 Cargo", value=self.dados["cargo"], inline=False)
+            embed.add_field(name="📦 Quantidade", value=str(self.dados["quantidade"]), inline=False)
+            embed.add_field(name="📍 Entregou para", value=self.dados["para"], inline=False)
+            embed.add_field(name="📅 Data", value=self.dados["data"], inline=False)
+            embed.add_field(name="📊 Status", value="❌ Entrega recusada", inline=False)
+            embed.add_field(name="⏱️ Prazo", value="10 horas", inline=False)
 
-        canal_recusados = self.bot.get_channel(config["canal_recusados"])
-        await canal_recusados.send(embed=embed)
+            canal_recusados = self.bot.get_channel(config.get("canal_recusados"))
+            if not canal_recusados:
+                await interaction.response.send_message("❌ Canal de recusados não encontrado.", ephemeral=True)
+                return
 
-        await interaction.channel.delete()
+            await canal_recusados.send(embed=embed)
+            await interaction.channel.delete()
+
+        except Exception:
+            traceback.print_exc()
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ Erro interno ao recusar.", ephemeral=True)
 
 # =========================
 # MODAL DE ENTREGA
@@ -92,57 +110,60 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
         self.cargo = cargo
 
     async def on_submit(self, interaction: discord.Interaction):
-        config = load_config()
-        if not config:
-            await interaction.response.send_message("❌ Configuração não encontrada.", ephemeral=True)
-            return
-
-        metas = config.get("metas_por_cargo")
-        if not metas:
-            await interaction.response.send_message("❌ Metas por cargo não configuradas.", ephemeral=True)
-            return
-
-        if self.cargo not in metas:
-            await interaction.response.send_message(f"❌ Não existe meta configurada para o cargo **{self.cargo}**.", ephemeral=True)
-            return
-
         try:
-            quantidade = int(self.quantidade.value)
-        except ValueError:
-            await interaction.response.send_message("❌ A quantidade precisa ser um número.", ephemeral=True)
-            return
+            config = load_config()
+            if not config:
+                await interaction.response.send_message("❌ Configuração não encontrada.", ephemeral=True)
+                return
 
-        meta = metas[self.cargo]
+            metas = config.get("metas_por_cargo")
+            if not metas or self.cargo not in metas:
+                await interaction.response.send_message("❌ Meta não configurada para este cargo.", ephemeral=True)
+                return
 
-        dados = {
-            "quem": interaction.user.mention,
-            "quantidade": quantidade,
-            "meta": meta,
-            "para": self.entregue_para.value,
-            "data": datetime.now().strftime("%d/%m/%Y"),
-            "cargo": self.cargo
-        }
+            try:
+                quantidade = int(self.quantidade.value)
+            except ValueError:
+                await interaction.response.send_message("❌ Quantidade inválida.", ephemeral=True)
+                return
 
-        categoria = self.bot.get_channel(config["categoria_analise"])
-        canal = await categoria.create_text_channel(
-            name=f"📦-entrega-{interaction.user.name}"
-        )
+            categoria = self.bot.get_channel(config.get("categoria_analise"))
+            if not categoria:
+                await interaction.response.send_message("❌ Categoria de análise não encontrada.", ephemeral=True)
+                return
 
-        embed = discord.Embed(
-            title="📦 NOVA ENTREGA DE FARM – ANÁLISE",
-            color=discord.Color.orange()
-        )
-        embed.add_field(name="🧍 Quem entregou", value=dados["quem"], inline=False)
-        embed.add_field(name="🎖 Cargo", value=self.cargo, inline=False)
-        embed.add_field(name="📦 Quantidade entregue", value=str(quantidade), inline=False)
-        embed.add_field(name="🎯 Meta do cargo", value=str(meta), inline=False)
-        embed.add_field(name="📍 Entregou para", value=dados["para"], inline=False)
-        embed.add_field(name="📅 Data", value=dados["data"], inline=False)
-        embed.add_field(name="🔎 Status", value="⏳ Aguardando decisão da staff", inline=False)
+            dados = {
+                "quem": interaction.user.mention,
+                "quantidade": quantidade,
+                "meta": metas[self.cargo],
+                "para": self.entregue_para.value,
+                "data": datetime.now().strftime("%d/%m/%Y"),
+                "cargo": self.cargo
+            }
 
-        await canal.send(embed=embed, view=AnaliseView(self.bot, dados))
+            canal = await categoria.create_text_channel(
+                name=f"📦-entrega-{interaction.user.name}"
+            )
 
-        await interaction.response.send_message("✅ Sua entrega foi enviada para análise.", ephemeral=True)
+            embed = discord.Embed(
+                title="📦 NOVA ENTREGA DE FARM – ANÁLISE",
+                color=discord.Color.orange()
+            )
+            embed.add_field(name="🧍 Quem entregou", value=dados["quem"], inline=False)
+            embed.add_field(name="🎖 Cargo", value=self.cargo, inline=False)
+            embed.add_field(name="📦 Quantidade entregue", value=str(quantidade), inline=False)
+            embed.add_field(name="🎯 Meta do cargo", value=str(dados["meta"]), inline=False)
+            embed.add_field(name="📍 Entregou para", value=dados["para"], inline=False)
+            embed.add_field(name="📅 Data", value=dados["data"], inline=False)
+            embed.add_field(name="🔎 Status", value="⏳ Aguardando decisão da staff", inline=False)
+
+            await canal.send(embed=embed, view=AnaliseView(self.bot, dados))
+            await interaction.response.send_message("✅ Enviado para análise.", ephemeral=True)
+
+        except Exception:
+            traceback.print_exc()
+            if not interaction.response.is_done():
+                await interaction.response.send_message("❌ Erro interno no envio.", ephemeral=True)
 
 # =========================
 # VIEW DO PAINEL
@@ -169,9 +190,8 @@ class PainelView(discord.ui.View):
     @discord.ui.button(label="📦 ENTREGAR FARM", style=discord.ButtonStyle.green)
     async def entregar(self, interaction: discord.Interaction, _):
         if not self.cargo_selecionado:
-            await interaction.response.send_message("❌ Selecione seu cargo antes de entregar o farm.", ephemeral=True)
+            await interaction.response.send_message("❌ Selecione um cargo primeiro.", ephemeral=True)
             return
-
         await interaction.response.send_modal(EntregaModal(self.bot, self.cargo_selecionado))
 
 # =========================
@@ -190,7 +210,6 @@ class Tickets(commands.Cog):
             color=discord.Color.blurple()
         )
         embed.set_image(url=GIF_PAINEL)
-
         await ctx.send(embed=embed, view=PainelView(self.bot))
         await ctx.message.delete()
 

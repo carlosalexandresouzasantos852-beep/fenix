@@ -1,9 +1,9 @@
 import discord
 from discord.ext import commands
 import os
-import threading
-import uvicorn
-from web import app  # seu web.py
+import asyncio
+import traceback
+from web import keep_alive
 
 intents = discord.Intents.default()
 intents.members = True
@@ -12,29 +12,42 @@ intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # =====================
-# Função para rodar o servidor HTTP (mantém bot online no Render)
+# Keep alive HTTP
 # =====================
-def start_web():
-    uvicorn.run(app, host="0.0.0.0", port=10000)
-
-threading.Thread(target=start_web).start()  # roda em background
+keep_alive()
 
 # =====================
-# Carregar COGs
-# =====================
-async def load_cogs():
-    await bot.load_extension("meu_bot_farm.cogs.tickets")
-
-# =====================
-# Evento ready
+# Ready
 # =====================
 @bot.event
 async def on_ready():
-    print(f"🔥 Bot online! Usuário: {bot.user}")
-    await load_cogs()
+    print(f"🔥 Bot online: {bot.user}")
+    try:
+        await bot.load_extension("meu_bot_farm.cogs.tickets")
+        print("✅ tickets.py carregado")
+    except Exception as e:
+        print("❌ Erro ao carregar tickets.py")
+        traceback.print_exc()
 
 # =====================
-# Rodar o bot
+# Captura QUALQUER erro global
 # =====================
-TOKEN = os.getenv("TOKEN")  # variável de ambiente no Render
-bot.run(TOKEN)
+@bot.event
+async def on_error(event, *args, **kwargs):
+    print(f"❌ Erro global no evento {event}")
+    traceback.print_exc()
+
+# =====================
+# Run seguro
+# =====================
+TOKEN = os.getenv("TOKEN")
+if not TOKEN:
+    raise RuntimeError("TOKEN não definido no Render")
+
+while True:
+    try:
+        bot.run(TOKEN)
+    except Exception:
+        print("⚠️ Bot caiu — reiniciando em 5s")
+        traceback.print_exc()
+        asyncio.sleep(5)
