@@ -1,8 +1,8 @@
 # meu_bot_farm/cogs/adv_automatico.py
 import discord
 from discord.ext import commands, tasks
-from datetime import datetime, timedelta
-from meu_bot_farm.cogs.tickets import garantir_config, salvar_config  # <- alterado
+from datetime import datetime
+from meu_bot_farm.cogs.tickets import garantir_config, salvar_config  # Import corrigido
 
 class ADV(commands.Cog):
     def __init__(self, bot):
@@ -13,9 +13,11 @@ class ADV(commands.Cog):
         self.reset_semana.start()
 
     async def cog_load(self):
+        """Carrega o canal de ADV a partir da configuração."""
         config = garantir_config()
         self.canal_adv_id = config.get("canal_adv")
-        self.canal_adv_obj = self.bot.get_channel(self.canal_adv_id)
+        if self.canal_adv_id:
+            self.canal_adv_obj = self.bot.get_channel(self.canal_adv_id)
 
     # =========================
     # Aplica ADV (botão ou automação)
@@ -42,12 +44,18 @@ class ADV(commands.Cog):
     # Envia lista de ADV ativos no canal de ADV
     # =========================
     async def enviar_adv_canal(self):
-        if not self.canal_adv_obj:
+        """Envia no canal configurado a lista de ADV ativos."""
+        if not self.canal_adv_obj and self.canal_adv_id:
             self.canal_adv_obj = self.bot.get_channel(self.canal_adv_id)
         if not self.canal_adv_obj:
             return
 
-        await self.canal_adv_obj.purge()  # Limpa mensagens antigas
+        # Limpa mensagens antigas (somente se o bot tiver permissão)
+        try:
+            await self.canal_adv_obj.purge()
+        except discord.Forbidden:
+            pass
+
         if not self.adv_ativos:
             await self.canal_adv_obj.send("Nenhum ADV ativo no momento.")
             return
@@ -62,7 +70,7 @@ class ADV(commands.Cog):
     # =========================
     @tasks.loop(hours=24)
     async def reset_semana(self):
-        """Reset diário para enviar ADV aos domingos 0h."""
+        """Reset diário para enviar ADV aos domingos 0h UTC."""
         await self.bot.wait_until_ready()
         now = datetime.utcnow()
         if now.weekday() == 6 and now.hour == 0:  # Domingo 0h UTC
