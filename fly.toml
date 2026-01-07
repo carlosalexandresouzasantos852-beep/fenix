@@ -1,0 +1,12 @@
+app = "meubot-fragrant-paper-872"
+primary_region = "gru"
+
+[build]
+  builder = "paketobuildpacks/builder:base"
+
+[processes]
+  app = "python run.py"
+
+[[vm]]
+  memory = "1gb"
+  cpus = 1
