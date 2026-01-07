@@ -1,9 +1,9 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import json
 import os
 from datetime import datetime
-import asyncio
 import traceback
 
 CONFIG = "meu_bot_farm/data/config_farm.json"
@@ -45,17 +45,16 @@ class AnaliseView(discord.ui.View):
             for k, v in self.dados.items():
                 embed.add_field(name=k, value=v, inline=False)
 
-            msg = await canal.send(embed=embed)
-
-            # apaga após 24h
-            await asyncio.sleep(86400)
-            await msg.delete()
-
+            await canal.send(embed=embed)
             await interaction.channel.delete()
 
         except Exception:
             traceback.print_exc()
-            await interaction.response.send_message("❌ Erro ao aceitar.", ephemeral=True)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ Erro ao aceitar a entrega.",
+                    ephemeral=True
+                )
 
     @discord.ui.button(label="❌ Recusar", style=discord.ButtonStyle.danger)
     async def recusar(self, interaction: discord.Interaction, _):
@@ -72,25 +71,32 @@ class AnaliseView(discord.ui.View):
             for k, v in self.dados.items():
                 embed.add_field(name=k, value=v, inline=False)
 
-            msg = await canal.send(embed=embed)
-
-            # apaga após 10h
-            await asyncio.sleep(36000)
-            await msg.delete()
-
+            await canal.send(embed=embed)
             await interaction.channel.delete()
 
         except Exception:
             traceback.print_exc()
-            await interaction.response.send_message("❌ Erro ao recusar.", ephemeral=True)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ Erro ao recusar a entrega.",
+                    ephemeral=True
+                )
 
 
 # =========================
 # MODAL
 # =========================
 class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
-    quantidade = discord.ui.TextInput(label="Quantidade entregue", required=True)
-    entregue_para = discord.ui.TextInput(label="Entregou para quem?", required=True)
+    quantidade = discord.ui.TextInput(
+        label="Quantidade entregue",
+        placeholder="Ex: 120",
+        required=True
+    )
+    entregue_para = discord.ui.TextInput(
+        label="Entregou para quem?",
+        placeholder="Nome ou ID",
+        required=True
+    )
 
     def __init__(self, bot, cargo):
         super().__init__()
@@ -111,7 +117,7 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
             }
 
             canal = await categoria.create_text_channel(
-                name=f"entrega-{interaction.user.name}"
+                name=f"📦-entrega-{interaction.user.name}"
             )
 
             embed = discord.Embed(
@@ -122,16 +128,27 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
             for k, v in dados.items():
                 embed.add_field(name=k, value=v, inline=False)
 
-            await canal.send(embed=embed, view=AnaliseView(self.bot, dados))
-            await interaction.response.send_message("✅ Enviado para análise.", ephemeral=True)
+            await canal.send(
+                embed=embed,
+                view=AnaliseView(self.bot, dados)
+            )
+
+            await interaction.response.send_message(
+                "✅ Entrega enviada para análise da staff.",
+                ephemeral=True
+            )
 
         except Exception:
             traceback.print_exc()
-            await interaction.response.send_message("❌ Erro ao enviar.", ephemeral=True)
+            if not interaction.response.is_done():
+                await interaction.response.send_message(
+                    "❌ Erro ao enviar a entrega.",
+                    ephemeral=True
+                )
 
 
 # =========================
-# PAINEL
+# PAINEL VIEW
 # =========================
 class PainelView(discord.ui.View):
     def __init__(self, bot):
@@ -148,7 +165,7 @@ class PainelView(discord.ui.View):
             discord.SelectOption(label="🛡️ Gerente", value="Gerente"),
         ]
     )
-    async def selecionar(self, interaction: discord.Interaction, select):
+    async def selecionar(self, interaction: discord.Interaction, select: discord.ui.Select):
         self.cargo = select.values[0]
         await interaction.response.send_message(
             f"✅ Cargo selecionado: **{self.cargo}**",
@@ -162,7 +179,10 @@ class PainelView(discord.ui.View):
                 "❌ Selecione um cargo primeiro.",
                 ephemeral=True
             )
-        await interaction.response.send_modal(EntregaModal(self.bot, self.cargo))
+
+        await interaction.response.send_modal(
+            EntregaModal(self.bot, self.cargo)
+        )
 
 
 # =========================
@@ -172,9 +192,12 @@ class Tickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.command(name="painelfarm")
-    @commands.has_permissions(manage_guild=True)
-    async def painel_farm(self, ctx):
+    @app_commands.command(
+        name="painelfarm",
+        description="Abrir o painel de entrega de farm"
+    )
+    @app_commands.checks.has_permissions(manage_guild=True)
+    async def painel_farm(self, interaction: discord.Interaction):
         embed = discord.Embed(
             title="📦 PAINEL DE FARM — KORTE",
             description="Selecione seu cargo e registre sua entrega.",
@@ -182,8 +205,10 @@ class Tickets(commands.Cog):
         )
         embed.set_image(url=GIF_PAINEL)
 
-        await ctx.send(embed=embed, view=PainelView(self.bot))
-        await ctx.message.delete()
+        await interaction.response.send_message(
+            embed=embed,
+            view=PainelView(self.bot)
+        )
 
 
 async def setup(bot):
