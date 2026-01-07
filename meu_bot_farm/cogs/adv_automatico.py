@@ -2,25 +2,31 @@ import discord
 from discord.ext import commands, tasks
 import json
 import os
-from datetime import datetime
+from datetime import datetime, date
 
 CONFIG = "meu_bot_farm/data/config_farm.json"
 ENTREGAS = "meu_bot_farm/data/entregas.json"
 ADVS = "meu_bot_farm/data/advs.json"
+CONTROLE = "meu_bot_farm/data/controle_adv.json"
 
+
+# ================== JSON ==================
 
 def load(path, default):
     if not os.path.exists(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(default, f, indent=4)
+            json.dump(default, f, indent=4, ensure_ascii=False)
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def save(path, data):
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
+        json.dump(data, f, indent=4, ensure_ascii=False)
 
+
+# ================== COG ==================
 
 class AdvAutomatico(commands.Cog):
     def __init__(self, bot):
@@ -30,12 +36,19 @@ class AdvAutomatico(commands.Cog):
     def cog_unload(self):
         self.verificar_adv.cancel()
 
-    @tasks.loop(minutes=60)
+    @tasks.loop(minutes=30)
     async def verificar_adv(self):
-        agora = datetime.now()
+        hoje = date.today()
 
         # 6 = domingo
-        if agora.weekday() != 6:
+        if hoje.weekday() != 6:
+            return
+
+        controle = load(CONTROLE, {})
+        ultimo_reset = controle.get("ultimo_reset")
+
+        # trava para não rodar mais de uma vez no mesmo domingo
+        if ultimo_reset == hoje.isoformat():
             return
 
         config = load(CONFIG, {})
@@ -45,7 +58,7 @@ class AdvAutomatico(commands.Cog):
         canal_adv_id = config.get("canal_adv")
         metas = config.get("metas", {})
 
-        if not canal_adv_id:
+        if not canal_adv_id or not metas:
             return
 
         for guild in self.bot.guilds:
@@ -57,37 +70,40 @@ class AdvAutomatico(commands.Cog):
                 if member.bot:
                     continue
 
-                # descobrir cargo válido
-                cargo_membro = None
+                cargo_valido = None
                 for role in member.roles:
                     if role.name in metas:
-                        cargo_membro = role.name
+                        cargo_valido = role.name
                         break
 
-                if not cargo_membro:
+                if not cargo_valido:
                     continue
 
-                meta = metas[cargo_membro]
+                meta = metas[cargo_valido]
                 entregue = entregas.get(str(member.id), 0)
 
                 if entregue < meta:
-                    advs[str(member.id)] = advs.get(str(member.id), 0) + 1
+                    uid = str(member.id)
+                    advs[uid] = advs.get(uid, 0) + 1
 
                     await canal_adv.send(
                         f"⚠️ **ADV AUTOMÁTICO APLICADO**\n"
                         f"👤 {member.mention}\n"
-                        f"🏷 Cargo: **{cargo_membro}**\n"
+                        f"🏷 Cargo: **{cargo_valido}**\n"
                         f"📦 Entregou: **{entregue}**\n"
                         f"🎯 Meta: **{meta}**\n"
-                        f"📛 Total ADV: **{advs[str(member.id)]}**"
+                        f"📛 Total ADV: **{advs[uid]}**"
                     )
 
-            # 🔥 zera entregas da semana
+            # 🔁 reset semanal
             save(ENTREGAS, {})
             save(ADVS, advs)
 
-            await canal_adv.send("🔁 **Sistema resetado para nova semana de farm.**")
-            break  # evita rodar mais de uma vez no mesmo domingo
+            controle["ultimo_reset"] = hoje.isoformat()
+            save(CONTROLE, controle)
+
+            await canal_adv.send("🔁 **Sistema de farm resetado para a nova semana.**")
+            break
 
     @verificar_adv.before_loop
     async def before_verificar(self):

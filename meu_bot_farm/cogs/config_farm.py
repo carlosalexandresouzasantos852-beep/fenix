@@ -1,70 +1,51 @@
-import os
-os.environ["DISCORD_DISABLE_VOICE"] = "1"
-
-import discord
-from discord.ext import commands
-from discord import app_commands
 import json
+import os
 
 CONFIG_PATH = "meu_bot_farm/data/config_farm.json"
 
+CONFIG_PADRAO = {
+    # ======================
+    # METAS POR CARGO
+    # ======================
+    "metas": {
+        "Aviãozinho": 50,
+        "Membro": 100,
+        "Recrutador": 200,
+        "Gerente": 300
+    },
 
-def load_config():
+    # ======================
+    # CANAIS
+    # ======================
+    "canal_adv": 0,            # Canal onde o ADV automático será enviado
+    "canal_aceitos": 0,        # Canal de entregas aceitas
+    "canal_recusados": 0,      # Canal de entregas recusadas
+
+    # ======================
+    # CATEGORIAS
+    # ======================
+    "categoria_analise": 0     # Categoria onde os tickets de análise são criados
+}
+
+
+def criar_config():
+    """Cria o arquivo config_farm.json se não existir"""
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+
     if not os.path.exists(CONFIG_PATH):
-        return {}
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(CONFIG_PADRAO, f, indent=4, ensure_ascii=False)
+        print("[CONFIG] config_farm.json criado com sucesso.")
+
+
+def carregar_config():
+    """Carrega a configuração"""
+    criar_config()
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def save_config(data):
-    os.makedirs("meu_bot_farm/data", exist_ok=True)
+def salvar_config(config: dict):
+    """Salva alterações no config"""
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-
-
-class ConfigFarm(commands.Cog):
-    def __init__(self, bot: commands.Bot):
-        self.bot = bot
-
-    @app_commands.command(
-        name="configticketfarm",
-        description="Configurar sistema de ticket/farm"
-    )
-    @app_commands.checks.has_permissions(administrator=True)
-    async def config_ticket_farm(
-        self,
-        interaction: discord.Interaction,
-
-        meta_aviao: int,
-        meta_membro: int,
-        meta_recrutador: int,
-        meta_gerente: int,
-
-        categoria_analise: discord.CategoryChannel,
-        canal_aceitos: discord.TextChannel,
-        canal_recusados: discord.TextChannel,
-        canal_adv: discord.TextChannel
-    ):
-        config = {
-            "metas": {
-                "Aviãozinho": meta_aviao,
-                "Membro": meta_membro,
-                "Recrutador": meta_recrutador,
-                "Gerente": meta_gerente
-            },
-            "categoria_analise": categoria_analise.id,
-            "canal_aceitos": canal_aceitos.id,
-            "canal_recusados": canal_recusados.id,
-            "canal_adv": canal_adv.id
-        }
-
-        save_config(config)
-
-        await interaction.response.send_message(
-            "✅ **Configuração do Ticket Farm salva com sucesso!**",
-            ephemeral=True
-        )
-
-
-async def setup(bot: commands.Bot):
-    await bot.add_cog(ConfigFarm(bot))
+        json.dump(config, f, indent=4, ensure_ascii=False)

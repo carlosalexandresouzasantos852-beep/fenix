@@ -1,3 +1,6 @@
+import os
+os.environ["DISCORD_DISABLE_VOICE"] = "1"
+
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -11,48 +14,66 @@ ADVS = "meu_bot_farm/data/advs.json"
 
 def load_advs():
     if not os.path.exists(ADVS):
-        os.makedirs("meu_bot_farm/data", exist_ok=True)
+        os.makedirs(os.path.dirname(ADVS), exist_ok=True)
         with open(ADVS, "w", encoding="utf-8") as f:
-            json.dump({}, f)
+            json.dump({}, f, indent=4)
+
     with open(ADVS, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def save_advs(data):
+def save_advs(data: dict):
     with open(ADVS, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+# ================== HELPERS ==================
+
+def add_adv(user_id: int, qtd: int = 1):
+    advs = load_advs()
+    uid = str(user_id)
+    advs[uid] = advs.get(uid, 0) + qtd
+    save_advs(advs)
+
+
+def remove_adv(user_id: int, qtd: int = 1):
+    advs = load_advs()
+    uid = str(user_id)
+    advs[uid] = max(0, advs.get(uid, 0) - qtd)
+    save_advs(advs)
+
+
+def get_adv(user_id: int) -> int:
+    advs = load_advs()
+    return advs.get(str(user_id), 0)
 
 
 # ================== MODAIS ==================
 
 class AddAdvModal(discord.ui.Modal, title="➕ Aplicar ADV"):
     membro = discord.ui.TextInput(label="ID do membro", required=True)
+    quantidade = discord.ui.TextInput(label="Quantidade", required=False, placeholder="1")
 
     async def on_submit(self, interaction: discord.Interaction):
-        advs = load_advs()
-        uid = self.membro.value
-
-        advs[uid] = advs.get(uid, 0) + 1
-        save_advs(advs)
+        qtd = int(self.quantidade.value) if self.quantidade.value else 1
+        add_adv(int(self.membro.value), qtd)
 
         await interaction.response.send_message(
-            f"✅ ADV aplicado.\n📛 Total atual: **{advs[uid]}**",
+            f"✅ ADV aplicado.\n📛 Total atual: **{get_adv(int(self.membro.value))}**",
             ephemeral=True
         )
 
 
 class RemoveAdvModal(discord.ui.Modal, title="➖ Remover ADV"):
     membro = discord.ui.TextInput(label="ID do membro", required=True)
+    quantidade = discord.ui.TextInput(label="Quantidade", required=False, placeholder="1")
 
     async def on_submit(self, interaction: discord.Interaction):
-        advs = load_advs()
-        uid = self.membro.value
-
-        advs[uid] = max(0, advs.get(uid, 0) - 1)
-        save_advs(advs)
+        qtd = int(self.quantidade.value) if self.quantidade.value else 1
+        remove_adv(int(self.membro.value), qtd)
 
         await interaction.response.send_message(
-            f"🔁 ADV removido.\n📛 Total atual: **{advs[uid]}**",
+            f"🔁 ADV removido.\n📛 Total atual: **{get_adv(int(self.membro.value))}**",
             ephemeral=True
         )
 
@@ -61,8 +82,7 @@ class VerAdvModal(discord.ui.Modal, title="👀 Ver ADV"):
     membro = discord.ui.TextInput(label="ID do membro", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
-        advs = load_advs()
-        total = advs.get(self.membro.value, 0)
+        total = get_adv(int(self.membro.value))
 
         await interaction.response.send_message(
             f"⚠️ Total de ADV: **{total}**",
@@ -89,52 +109,39 @@ class PainelStaffView(discord.ui.View):
         await interaction.response.send_modal(VerAdvModal())
 
 
-# ================== COG STAFF ==================
+# ================== COG ==================
 
 class Staff(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    # ---------- SLASH COMMANDS ----------
+    # ---------- SLASH ----------
 
     @app_commands.command(name="veradv", description="Ver ADV de um membro")
     async def veradv(self, interaction: discord.Interaction, membro: discord.Member):
-        advs = load_advs()
         await interaction.response.send_message(
-            f"⚠️ {membro.mention} possui **{advs.get(str(membro.id), 0)} ADV**",
+            f"⚠️ {membro.mention} possui **{get_adv(membro.id)} ADV**",
             ephemeral=True
         )
 
     @app_commands.command(name="addadv", description="Aplicar ADV manual")
-    async def addadv(self, interaction: discord.Interaction, membro: discord.Member):
-        advs = load_advs()
-        advs[str(membro.id)] = advs.get(str(membro.id), 0) + 1
-        save_advs(advs)
-
-        await interaction.response.send_message(
-            "✅ ADV aplicado com sucesso.",
-            ephemeral=True
-        )
+    async def addadv(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int = 1):
+        add_adv(membro.id, quantidade)
+        await interaction.response.send_message("✅ ADV aplicado com sucesso.", ephemeral=True)
 
     @app_commands.command(name="removeadv", description="Remover ADV manual")
-    async def removeadv(self, interaction: discord.Interaction, membro: discord.Member):
-        advs = load_advs()
-        advs[str(membro.id)] = max(0, advs.get(str(membro.id), 0) - 1)
-        save_advs(advs)
+    async def removeadv(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int = 1):
+        remove_adv(membro.id, quantidade)
+        await interaction.response.send_message("🔁 ADV removido com sucesso.", ephemeral=True)
 
-        await interaction.response.send_message(
-            "🔁 ADV removido com sucesso.",
-            ephemeral=True
-        )
-
-    # ---------- PAINEL PREFIXO ----------
+    # ---------- PAINEL ----------
 
     @commands.command(name="painelstaff")
     @commands.has_permissions(manage_guild=True)
     async def painel_staff(self, ctx):
         embed = discord.Embed(
             title="🛡 PAINEL STAFF — FARM & ADV",
-            description="Gerencie advertências usando os botões abaixo.",
+            description="Gerencie advertências e punições do sistema de farm.",
             color=discord.Color.red()
         )
 
