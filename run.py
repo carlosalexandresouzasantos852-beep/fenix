@@ -18,12 +18,11 @@ class MeuBot(commands.Bot):
         )
 
     async def setup_hook(self):
-        # 🔹 COGS REAIS
+        # 🔹 COGS REAIS (sem config_farm, apenas cogs com setup)
         cogs = [
             "meu_bot_farm.cogs.tickets",
             "meu_bot_farm.cogs.metas",
             "meu_bot_farm.cogs.adv_automatico",
-            "meu_bot_farm.cogs.config_farm",
         ]
 
         for cog in cogs:
