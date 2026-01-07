@@ -18,7 +18,7 @@ class MeuBot(commands.Bot):
         )
 
     async def setup_hook(self):
-        # 🔹 COGS REAIS (sem config_farm, apenas cogs com setup)
+        # 🔹 COGS REAIS
         cogs = [
             "meu_bot_farm.cogs.tickets",
             "meu_bot_farm.cogs.metas",
@@ -35,6 +35,11 @@ class MeuBot(commands.Bot):
         # 🔹 SYNC GLOBAL (multi-servidor)
         synced = await self.tree.sync()
         print(f"🌍 Slash commands globais sincronizados: {len(synced)}")
+
+        # 🔹 LISTAR TODOS OS COMANDOS REGISTRADOS NO TREE
+        print("📋 Comandos registrados no bot:")
+        for cmd in self.tree.get_commands():
+            print(f" - {cmd.name} (descrição: {cmd.description})")
 
     # 🔥 QUANDO O BOT ENTRA EM UM SERVIDOR NOVO
     async def on_guild_join(self, guild: discord.Guild):
