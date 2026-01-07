@@ -1,49 +1,46 @@
+import os
+import json
 import discord
 from discord.ext import commands
 from discord import app_commands
-import json
-import os
 from datetime import datetime
 import traceback
 
-GIF_PAINEL = "https://cdn.discordapp.com/attachments/1266573285236408363/1452178207255040082/Adobe_Express_-_VID-20251221-WA0034.gif"
+# =========================
+# CONFIGURAÇÃO
+# =========================
 CONFIG_PATH = "meu_bot_farm/data/config_farm.json"
 
-# =========================
-# FUNÇÕES DE CONFIG
-# =========================
-def garantir_config() -> dict:
-    """Garante que o JSON existe e carrega a configuração."""
+def garantir_config():
     default = {
-        "canal_aceitos": None,
-        "canal_recusados": None,
-        "categoria_analise": None,
+        "canal_aceitos": 0,
+        "canal_recusados": 0,
+        "categoria_analise": 0,
         "metas": {
-            "aviãozinho": 1,
-            "membro": 2,
-            "recrutador": 3,
-            "gerente": 4
+            "aviãozinho": 10,
+            "membro": 20,
+            "recrutador": 30,
+            "gerente": 40
         }
     }
+
     if not os.path.exists(CONFIG_PATH):
         os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(default, f, indent=4, ensure_ascii=False)
+        return default
 
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         return json.load(f)
 
-def salvar_config(config: dict):
-    """Salva a configuração no JSON."""
+def salvar_config(config):
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
 
-
 # =========================
-# FUNÇÕES DE METAS
+# METAS
 # =========================
 def cargo_do_usuario(member: discord.Member) -> str | None:
-    """Retorna o cargo do membro baseado em roles."""
     cargos = [r.name.lower() for r in member.roles]
 
     if "aviãozinho" in cargos:
@@ -54,11 +51,9 @@ def cargo_do_usuario(member: discord.Member) -> str | None:
         return "recrutador"
     if "gerente" in cargos:
         return "gerente"
-
     return None
 
 def meta_por_usuario(member: discord.Member) -> int | None:
-    """Retorna a meta baseada no cargo do usuário."""
     config = garantir_config()
     metas = config.get("metas", {})
 
@@ -68,6 +63,10 @@ def meta_por_usuario(member: discord.Member) -> int | None:
 
     return metas.get(cargo)
 
+# =========================
+# GIF PAINEL
+# =========================
+GIF_PAINEL = "https://cdn.discordapp.com/attachments/1266573285236408363/1452178207255040082/Adobe_Express_-_VID-20251221-WA0034.gif"
 
 # =========================
 # VIEW DE ANÁLISE
@@ -82,7 +81,7 @@ class AnaliseView(discord.ui.View):
     async def aceitar(self, interaction: discord.Interaction, _):
         try:
             config = garantir_config()
-            canal = self.bot.get_channel(config.get("canal_aceitos"))
+            canal = self.bot.get_channel(config["canal_aceitos"])
 
             if not canal:
                 return await interaction.response.send_message(
@@ -95,7 +94,6 @@ class AnaliseView(discord.ui.View):
                 color=discord.Color.green(),
                 timestamp=datetime.now()
             )
-
             for k, v in self.dados.items():
                 embed.add_field(name=k, value=v, inline=False)
 
@@ -109,7 +107,7 @@ class AnaliseView(discord.ui.View):
     async def recusar(self, interaction: discord.Interaction, _):
         try:
             config = garantir_config()
-            canal = self.bot.get_channel(config.get("canal_recusados"))
+            canal = self.bot.get_channel(config["canal_recusados"])
 
             if not canal:
                 return await interaction.response.send_message(
@@ -122,7 +120,6 @@ class AnaliseView(discord.ui.View):
                 color=discord.Color.red(),
                 timestamp=datetime.now()
             )
-
             for k, v in self.dados.items():
                 embed.add_field(name=k, value=v, inline=False)
 
@@ -132,9 +129,8 @@ class AnaliseView(discord.ui.View):
         except Exception:
             traceback.print_exc()
 
-
 # =========================
-# MODAL
+# MODAL DE ENTREGA
 # =========================
 class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
     quantidade = discord.ui.TextInput(label="Quantidade entregue", required=True)
@@ -148,7 +144,7 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             config = garantir_config()
-            categoria = self.bot.get_channel(config.get("categoria_analise"))
+            categoria = self.bot.get_channel(config["categoria_analise"])
 
             if not categoria:
                 return await interaction.response.send_message(
@@ -161,8 +157,7 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
                 "🎖 Cargo": self.cargo,
                 "📦 Quantidade": self.quantidade.value,
                 "📍 Entregou para": self.entregue_para.value,
-                "📅 Data": datetime.now().strftime("%d/%m/%Y"),
-                "🎯 Meta": meta_por_usuario(interaction.user) or "Não configurada"
+                "📅 Data": datetime.now().strftime("%d/%m/%Y")
             }
 
             canal = await categoria.create_text_channel(
@@ -173,12 +168,10 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
                 title="📦 NOVA ENTREGA — ANÁLISE",
                 color=discord.Color.orange()
             )
-
             for k, v in dados.items():
                 embed.add_field(name=k, value=v, inline=False)
 
             await canal.send(embed=embed, view=AnaliseView(self.bot, dados))
-
             await interaction.response.send_message(
                 "✅ Entrega enviada para análise.",
                 ephemeral=True
@@ -186,7 +179,6 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
 
         except Exception:
             traceback.print_exc()
-
 
 # =========================
 # PAINEL VIEW
@@ -225,9 +217,8 @@ class PainelView(discord.ui.View):
             EntregaModal(self.bot, self.cargo)
         )
 
-
 # =========================
-# COG
+# COG TICKETS
 # =========================
 class Tickets(commands.Cog):
     def __init__(self, bot):
@@ -241,12 +232,13 @@ class Tickets(commands.Cog):
             color=discord.Color.blurple()
         )
         embed.set_image(url=GIF_PAINEL)
-
         await interaction.response.send_message(
             embed=embed,
             view=PainelView(self.bot)
         )
 
-
+# =========================
+# SETUP
+# =========================
 async def setup(bot):
     await bot.add_cog(Tickets(bot))
