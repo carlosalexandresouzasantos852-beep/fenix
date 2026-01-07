@@ -1,114 +1,77 @@
+# meu_bot_farm/cogs/adv_automatico.py
 import discord
 from discord.ext import commands, tasks
-import json
-import os
-from datetime import datetime, date
+from datetime import datetime, timedelta
+from meu_bot_farm.cogs.config_farm import garantir_config, salvar_config
 
-CONFIG = "meu_bot_farm/data/config_farm.json"
-ENTREGAS = "meu_bot_farm/data/entregas.json"
-ADVS = "meu_bot_farm/data/advs.json"
-CONTROLE = "meu_bot_farm/data/controle_adv.json"
-
-
-# ================== JSON ==================
-
-def load(path, default):
-    if not os.path.exists(path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(default, f, indent=4, ensure_ascii=False)
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save(path, data):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-
-
-# ================== COG ==================
-
-class AdvAutomatico(commands.Cog):
+class ADV(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.verificar_adv.start()
+        self.adv_ativos = {}  # {"apelido": qtd}
+        self.canal_adv_id = None
+        self.canal_adv_obj = None
+        self.reset_semana.start()
 
-    def cog_unload(self):
-        self.verificar_adv.cancel()
+    async def cog_load(self):
+        config = garantir_config()
+        self.canal_adv_id = config.get("canal_adv")
+        self.canal_adv_obj = self.bot.get_channel(self.canal_adv_id)
 
-    @tasks.loop(minutes=30)
-    async def verificar_adv(self):
-        hoje = date.today()
+    # =========================
+    # Aplica ADV (botão ou automação)
+    # =========================
+    def aplicar_adv(self, apelido: str, qtd: int = 1):
+        """Aplica ADV para o jogador."""
+        self.adv_ativos[apelido] = self.adv_ativos.get(apelido, 0) + qtd
 
-        # 6 = domingo
-        if hoje.weekday() != 6:
+    # =========================
+    # Remove ADV manual
+    # =========================
+    def remover_adv(self, apelido: str):
+        """Remove ADV manualmente."""
+        if apelido in self.adv_ativos:
+            del self.adv_ativos[apelido]
+
+    # =========================
+    # Lista todos ADV ativos
+    # =========================
+    def listar_adv(self):
+        return self.adv_ativos
+
+    # =========================
+    # Envia lista de ADV ativos no canal de ADV
+    # =========================
+    async def enviar_adv_canal(self):
+        if not self.canal_adv_obj:
+            self.canal_adv_obj = self.bot.get_channel(self.canal_adv_id)
+        if not self.canal_adv_obj:
             return
 
-        controle = load(CONTROLE, {})
-        ultimo_reset = controle.get("ultimo_reset")
-
-        # trava para não rodar mais de uma vez no mesmo domingo
-        if ultimo_reset == hoje.isoformat():
+        await self.canal_adv_obj.purge()  # Limpa mensagens antigas
+        if not self.adv_ativos:
+            await self.canal_adv_obj.send("Nenhum ADV ativo no momento.")
             return
 
-        config = load(CONFIG, {})
-        entregas = load(ENTREGAS, {})
-        advs = load(ADVS, {})
+        mensagem = "**ADV da semana:**\n"
+        for apelido, qtd in self.adv_ativos.items():
+            mensagem += f"- {apelido} | ADV: {qtd}\n"
+        await self.canal_adv_obj.send(mensagem)
 
-        canal_adv_id = config.get("canal_adv")
-        metas = config.get("metas", {})
+    # =========================
+    # Reset semanal do canal (somente mensagens)
+    # =========================
+    @tasks.loop(hours=24)
+    async def reset_semana(self):
+        """Reset diário para enviar ADV aos domingos 0h."""
+        await self.bot.wait_until_ready()
+        now = datetime.utcnow()
+        if now.weekday() == 6 and now.hour == 0:  # Domingo 0h UTC
+            await self.enviar_adv_canal()
 
-        if not canal_adv_id or not metas:
-            return
-
-        for guild in self.bot.guilds:
-            canal_adv = guild.get_channel(canal_adv_id)
-            if not canal_adv:
-                continue
-
-            for member in guild.members:
-                if member.bot:
-                    continue
-
-                cargo_valido = None
-                for role in member.roles:
-                    if role.name in metas:
-                        cargo_valido = role.name
-                        break
-
-                if not cargo_valido:
-                    continue
-
-                meta = metas[cargo_valido]
-                entregue = entregas.get(str(member.id), 0)
-
-                if entregue < meta:
-                    uid = str(member.id)
-                    advs[uid] = advs.get(uid, 0) + 1
-
-                    await canal_adv.send(
-                        f"⚠️ **ADV AUTOMÁTICO APLICADO**\n"
-                        f"👤 {member.mention}\n"
-                        f"🏷 Cargo: **{cargo_valido}**\n"
-                        f"📦 Entregou: **{entregue}**\n"
-                        f"🎯 Meta: **{meta}**\n"
-                        f"📛 Total ADV: **{advs[uid]}**"
-                    )
-
-            # 🔁 reset semanal
-            save(ENTREGAS, {})
-            save(ADVS, advs)
-
-            controle["ultimo_reset"] = hoje.isoformat()
-            save(CONTROLE, controle)
-
-            await canal_adv.send("🔁 **Sistema de farm resetado para a nova semana.**")
-            break
-
-    @verificar_adv.before_loop
-    async def before_verificar(self):
+    @reset_semana.before_loop
+    async def before_reset(self):
         await self.bot.wait_until_ready()
 
-
+# Setup
 async def setup(bot):
-    await bot.add_cog(AdvAutomatico(bot))
+    await bot.add_cog(ADV(bot))

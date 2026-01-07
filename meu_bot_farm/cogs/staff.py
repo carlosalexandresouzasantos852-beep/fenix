@@ -1,155 +1,112 @@
-import os
-os.environ["DISCORD_DISABLE_VOICE"] = "1"
-
+# meu_bot_farm/cogs/painel_staff.py
 import discord
 from discord.ext import commands
 from discord import app_commands
-import json
-import os
+import asyncio
+from meu_bot_farm.cogs.config_farm import garantir_config
 
-ADVS = "meu_bot_farm/data/advs.json"
-
-
-# ================== JSON ==================
-
-def load_advs():
-    if not os.path.exists(ADVS):
-        os.makedirs(os.path.dirname(ADVS), exist_ok=True)
-        with open(ADVS, "w", encoding="utf-8") as f:
-            json.dump({}, f, indent=4)
-
-    with open(ADVS, "r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def save_advs(data: dict):
-    with open(ADVS, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4, ensure_ascii=False)
-
-
-# ================== HELPERS ==================
-
-def add_adv(user_id: int, qtd: int = 1):
-    advs = load_advs()
-    uid = str(user_id)
-    advs[uid] = advs.get(uid, 0) + qtd
-    save_advs(advs)
-
-
-def remove_adv(user_id: int, qtd: int = 1):
-    advs = load_advs()
-    uid = str(user_id)
-    advs[uid] = max(0, advs.get(uid, 0) - qtd)
-    save_advs(advs)
-
-
-def get_adv(user_id: int) -> int:
-    advs = load_advs()
-    return advs.get(str(user_id), 0)
-
-
-# ================== MODAIS ==================
-
-class AddAdvModal(discord.ui.Modal, title="➕ Aplicar ADV"):
-    membro = discord.ui.TextInput(label="ID do membro", required=True)
-    quantidade = discord.ui.TextInput(label="Quantidade", required=False, placeholder="1")
-
-    async def on_submit(self, interaction: discord.Interaction):
-        qtd = int(self.quantidade.value) if self.quantidade.value else 1
-        add_adv(int(self.membro.value), qtd)
-
-        await interaction.response.send_message(
-            f"✅ ADV aplicado.\n📛 Total atual: **{get_adv(int(self.membro.value))}**",
-            ephemeral=True
-        )
-
-
-class RemoveAdvModal(discord.ui.Modal, title="➖ Remover ADV"):
-    membro = discord.ui.TextInput(label="ID do membro", required=True)
-    quantidade = discord.ui.TextInput(label="Quantidade", required=False, placeholder="1")
-
-    async def on_submit(self, interaction: discord.Interaction):
-        qtd = int(self.quantidade.value) if self.quantidade.value else 1
-        remove_adv(int(self.membro.value), qtd)
-
-        await interaction.response.send_message(
-            f"🔁 ADV removido.\n📛 Total atual: **{get_adv(int(self.membro.value))}**",
-            ephemeral=True
-        )
-
-
-class VerAdvModal(discord.ui.Modal, title="👀 Ver ADV"):
-    membro = discord.ui.TextInput(label="ID do membro", required=True)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        total = get_adv(int(self.membro.value))
-
-        await interaction.response.send_message(
-            f"⚠️ Total de ADV: **{total}**",
-            ephemeral=True
-        )
-
-
-# ================== VIEW ==================
-
-class PainelStaffView(discord.ui.View):
-    def __init__(self):
-        super().__init__(timeout=None)
-
-    @discord.ui.button(label="➕ ADD ADV", style=discord.ButtonStyle.danger)
-    async def add_adv(self, interaction: discord.Interaction, _):
-        await interaction.response.send_modal(AddAdvModal())
-
-    @discord.ui.button(label="➖ REMOVER ADV", style=discord.ButtonStyle.secondary)
-    async def remove_adv(self, interaction: discord.Interaction, _):
-        await interaction.response.send_modal(RemoveAdvModal())
-
-    @discord.ui.button(label="👀 VER ADV", style=discord.ButtonStyle.primary)
-    async def ver_adv(self, interaction: discord.Interaction, _):
-        await interaction.response.send_modal(VerAdvModal())
-
-
-# ================== COG ==================
-
-class Staff(commands.Cog):
+class PainelStaff(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.config = garantir_config()
+        self.metas = self.config.get("metas", {})
+        self.canal_aceitos = None
+        self.canal_recusados = None
+        self.canal_pd = None
+        self.adv_cog = None
 
-    # ---------- SLASH ----------
+    async def cog_load(self):
+        self.adv_cog = self.bot.get_cog("ADV")
+        self.canal_aceitos = self.bot.get_channel(self.config.get("canal_aceitos"))
+        self.canal_recusados = self.bot.get_channel(self.config.get("canal_recusados"))
+        self.canal_pd = self.bot.get_channel(self.config.get("canal_pd"))
 
-    @app_commands.command(name="veradv", description="Ver ADV de um membro")
-    async def veradv(self, interaction: discord.Interaction, membro: discord.Member):
-        await interaction.response.send_message(
-            f"⚠️ {membro.mention} possui **{get_adv(membro.id)} ADV**",
-            ephemeral=True
-        )
-
-    @app_commands.command(name="addadv", description="Aplicar ADV manual")
-    async def addadv(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int = 1):
-        add_adv(membro.id, quantidade)
-        await interaction.response.send_message("✅ ADV aplicado com sucesso.", ephemeral=True)
-
-    @app_commands.command(name="removeadv", description="Remover ADV manual")
-    async def removeadv(self, interaction: discord.Interaction, membro: discord.Member, quantidade: int = 1):
-        remove_adv(membro.id, quantidade)
-        await interaction.response.send_message("🔁 ADV removido com sucesso.", ephemeral=True)
-
-    # ---------- PAINEL ----------
-
+    # =======================
+    # Comando de Painel Staff
+    # =======================
     @commands.command(name="painelstaff")
-    @commands.has_permissions(manage_guild=True)
     async def painel_staff(self, ctx):
         embed = discord.Embed(
-            title="🛡 PAINEL STAFF — FARM & ADV",
-            description="Gerencie advertências e punições do sistema de farm.",
+            title="📋 Painel Staff",
+            description="Use os botões abaixo para gerenciar farm e ADV",
+            color=discord.Color.blue()
+        )
+        view = PainelStaffView(self, ctx.guild)
+        await ctx.send(embed=embed, view=view)
+
+    # =======================
+    # Funções de Farm/ADV/PD
+    # =======================
+    async def aceitar_farm(self, membro: discord.Member, cargo: str, quantidade: int):
+        meta = self.metas.get(cargo, 0)
+        status_meta = "✅ Meta concluída" if quantidade >= meta else f"❌ Faltam {meta - quantidade}"
+        embed = discord.Embed(
+            title="Entrega de Farm Concluída",
+            description=f"**Membro:** {membro.display_name}\n**Cargo:** {cargo}\n**Quantidade:** {quantidade}\n**Status:** {status_meta}",
+            color=discord.Color.green()
+        )
+        msg = await self.canal_aceitos.send(embed=embed)
+        await asyncio.sleep(24*3600)
+        await msg.delete()
+
+    async def recusar_farm(self, membro: discord.Member, cargo: str, quantidade: int):
+        embed = discord.Embed(
+            title="Entrega de Farm Recusada",
+            description=f"**Membro:** {membro.display_name}\n**Cargo:** {cargo}\n**Quantidade:** {quantidade}",
             color=discord.Color.red()
         )
+        msg = await self.canal_recusados.send(embed=embed)
+        await asyncio.sleep(10*3600)
+        await msg.delete()
 
-        await ctx.send(embed=embed, view=PainelStaffView())
-        await ctx.message.delete()
+    async def aplicar_adv_manual(self, apelido: str, qtd: int = 1):
+        self.adv_cog.aplicar_adv_botao(apelido, qtd)
 
+    async def remover_adv_manual(self, apelido: str):
+        self.adv_cog.remover_adv_botao(apelido)
 
-# ================== SETUP ==================
+    async def ver_vadv(self):
+        return self.adv_cog.listar_adv()
 
+    async def aplicar_pd(self, membro: discord.Member):
+        apelido = membro.display_name
+        adv = self.adv_cog.adv_ativos.get(apelido, 0)
+        if adv >= 5:
+            await membro.kick(reason="PD automático - 5 ADV")
+            if self.canal_pd:
+                await self.canal_pd.send(f"⚠️ PD aplicado a {apelido} por acumular 5 ADV.")
+
+# ===================================
+# View Botões Painel Staff
+# ===================================
+class PainelStaffView(discord.ui.View):
+    def __init__(self, cog: PainelStaff, guild: discord.Guild):
+        super().__init__(timeout=None)
+        self.cog = cog
+        self.guild = guild
+
+    @discord.ui.button(label="Entrega Farm", style=discord.ButtonStyle.green)
+    async def entrega_farm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Modal de entrega farm (implementação do modal necessária)", ephemeral=True)
+
+    @discord.ui.button(label="Aplicar ADV Manual", style=discord.ButtonStyle.red)
+    async def aplicar_adv(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Modal de aplicar ADV manual (implementação necessária)", ephemeral=True)
+
+    @discord.ui.button(label="Remover ADV Manual", style=discord.ButtonStyle.grey)
+    async def remover_adv(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Modal de remover ADV manual (implementação necessária)", ephemeral=True)
+
+    @discord.ui.button(label="Ver VADV", style=discord.ButtonStyle.blurple)
+    async def ver_vadv(self, interaction: discord.Interaction, button: discord.ui.Button):
+        adv_ativos = await self.cog.ver_vadv()
+        if adv_ativos:
+            desc = "\n".join([f"{apelido}: {qtd}" for apelido, qtd in adv_ativos.items()])
+        else:
+            desc = "Nenhum ADV ativo no momento."
+        embed = discord.Embed(title="📋 ADV Ativos (VADV)", description=desc, color=discord.Color.orange())
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+# Setup
 async def setup(bot):
-    await bot.add_cog(Staff(bot))
+    await bot.add_cog(PainelStaff(bot))
