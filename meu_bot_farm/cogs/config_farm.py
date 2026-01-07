@@ -17,19 +17,21 @@ CONFIG_PADRAO = {
     # ======================
     # CANAIS
     # ======================
-    "canal_adv": 0,            # Canal onde o ADV automático será enviado
-    "canal_aceitos": 0,        # Canal de entregas aceitas
-    "canal_recusados": 0,      # Canal de entregas recusadas
+    "canal_adv": None,        # ID do canal de ADV automático
+    "canal_aceitos": None,    # ID do canal de entregas aceitas
+    "canal_recusados": None,  # ID do canal de entregas recusadas
 
     # ======================
     # CATEGORIAS
     # ======================
-    "categoria_analise": 0     # Categoria onde os tickets de análise são criados
+    "categoria_analise": None # ID da categoria de análise
 }
 
 
+# ======================
+# FUNÇÕES
+# ======================
 def criar_config():
-    """Cria o arquivo config_farm.json se não existir"""
     os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
 
     if not os.path.exists(CONFIG_PATH):
@@ -38,14 +40,33 @@ def criar_config():
         print("[CONFIG] config_farm.json criado com sucesso.")
 
 
-def carregar_config():
-    """Carrega a configuração"""
+def carregar_config() -> dict:
     criar_config()
+
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+        config = json.load(f)
+
+    return config
 
 
 def salvar_config(config: dict):
-    """Salva alterações no config"""
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
+
+
+def validar_config(config: dict):
+    erros = []
+
+    for chave in [
+        "canal_adv",
+        "canal_aceitos",
+        "canal_recusados",
+        "categoria_analise"
+    ]:
+        if not isinstance(config.get(chave), int):
+            erros.append(chave)
+
+    if erros:
+        raise ValueError(
+            f"[CONFIG] IDs inválidos ou não configurados: {', '.join(erros)}"
+        )

@@ -18,11 +18,11 @@ class MeuBot(commands.Bot):
         )
 
     async def setup_hook(self):
-        # 🔹 LISTA DE COGS (TODOS!)
+        # 🔹 COGS REAIS
         cogs = [
             "meu_bot_farm.cogs.tickets",
-            "meu_bot_farm.cogs.config_farm",
             "meu_bot_farm.cogs.metas",
+            "meu_bot_farm.cogs.adv_automatico",
         ]
 
         for cog in cogs:
@@ -32,9 +32,17 @@ class MeuBot(commands.Bot):
             except Exception as e:
                 print(f"❌ Erro ao carregar {cog}: {e}")
 
-        # 🔹 SINCRONIZA SLASH COMMANDS (GLOBAL)
+        # 🔹 SYNC GLOBAL (multi-servidor)
         synced = await self.tree.sync()
-        print(f"🚀 Slash commands sincronizados: {len(synced)}")
+        print(f"🌍 Slash commands globais sincronizados: {len(synced)}")
+
+    # 🔥 QUANDO O BOT ENTRA EM UM SERVIDOR NOVO
+    async def on_guild_join(self, guild: discord.Guild):
+        try:
+            await self.tree.sync()
+            print(f"➕ Entrou no servidor {guild.name} | Slash sincronizados")
+        except Exception as e:
+            print(f"❌ Erro ao sincronizar no servidor {guild.name}: {e}")
 
 # ================== START ==================
 bot = MeuBot()

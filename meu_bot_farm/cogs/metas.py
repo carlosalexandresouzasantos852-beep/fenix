@@ -4,7 +4,6 @@ os.environ["DISCORD_DISABLE_VOICE"] = "1"
 import discord
 from discord.ext import commands
 import json
-import os
 
 CONFIG = "meu_bot_farm/data/config_farm.json"
 
