@@ -1,33 +1,37 @@
-import json
-import os
+import discord
+from discord.ext import commands
+from discord import app_commands
 
-CONFIG_PATH = "meu_bot_farm/data/config_farm.py"
-
-CONFIG_PADRAO = {
-    "metas": {
-        "Aviãozinho": 50,
-        "Membro": 100,
-        "Recrutador": 200,
-        "Gerente": 300
-    },
-    "canal_adv": 0,
-    "canal_aceitos": 0,
-    "canal_recusados": 0,
-    "categoria_analise": 0
-}
+from meu_bot_farm.utils.config_manager import get_config, set_config
 
 
-def garantir_config():
-    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+class ConfigFarm(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
 
-    if not os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(CONFIG_PADRAO, f, indent=4, ensure_ascii=False)
+    @app_commands.command(name="setcanal_adv", description="Define o canal de advertências")
+    @app_commands.checks.has_permissions(administrator=True)
+    async def set_canal_adv(self, interaction: discord.Interaction, canal: discord.TextChannel):
+        set_config(interaction.guild.id, "canal_adv", canal.id)
+        await interaction.response.send_message(
+            f"✅ Canal de advertências definido para {canal.mention}",
+            ephemeral=True
+        )
 
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        return json.load(f)
+    @app_commands.command(name="ver_config", description="Mostra a configuração atual do servidor")
+    async def ver_config(self, interaction: discord.Interaction):
+        cfg = get_config(interaction.guild.id)
+
+        embed = discord.Embed(
+            title="⚙️ Configuração do Servidor",
+            color=discord.Color.blue()
+        )
+
+        for k, v in cfg.items():
+            embed.add_field(name=k, value=str(v), inline=False)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
-def salvar_config(config: dict):
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=4, ensure_ascii=False)
+async def setup(bot):
+    await bot.add_cog(ConfigFarm(bot))
