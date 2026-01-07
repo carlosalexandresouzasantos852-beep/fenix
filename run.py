@@ -23,6 +23,7 @@ class MeuBot(commands.Bot):
             "meu_bot_farm.cogs.tickets",
             "meu_bot_farm.cogs.metas",
             "meu_bot_farm.cogs.adv_automatico",
+            "meu_bot_farm.cogs.config_farm",
         ]
 
         for cog in cogs:

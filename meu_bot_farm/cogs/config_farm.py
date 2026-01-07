@@ -1,7 +1,7 @@
 import json
 import os
 
-CONFIG_PATH = "meu_bot_farm/data/config_farm.json"
+CONFIG_PATH = "meu_bot_farm/data/config_farm.py"
 
 CONFIG_PADRAO = {
     "metas": {
