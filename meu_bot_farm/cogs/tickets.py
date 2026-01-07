@@ -6,9 +6,67 @@ import os
 from datetime import datetime
 import traceback
 
-from meu_bot_farm.cogs.config_farm import garantir_config
-
 GIF_PAINEL = "https://cdn.discordapp.com/attachments/1266573285236408363/1452178207255040082/Adobe_Express_-_VID-20251221-WA0034.gif"
+CONFIG_PATH = "meu_bot_farm/data/config_farm.json"
+
+# =========================
+# FUNÇÕES DE CONFIG
+# =========================
+def garantir_config() -> dict:
+    """Garante que o JSON existe e carrega a configuração."""
+    default = {
+        "canal_aceitos": None,
+        "canal_recusados": None,
+        "categoria_analise": None,
+        "metas": {
+            "aviãozinho": 1,
+            "membro": 2,
+            "recrutador": 3,
+            "gerente": 4
+        }
+    }
+    if not os.path.exists(CONFIG_PATH):
+        os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(default, f, indent=4, ensure_ascii=False)
+
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def salvar_config(config: dict):
+    """Salva a configuração no JSON."""
+    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(config, f, indent=4, ensure_ascii=False)
+
+
+# =========================
+# FUNÇÕES DE METAS
+# =========================
+def cargo_do_usuario(member: discord.Member) -> str | None:
+    """Retorna o cargo do membro baseado em roles."""
+    cargos = [r.name.lower() for r in member.roles]
+
+    if "aviãozinho" in cargos:
+        return "aviãozinho"
+    if "membro" in cargos:
+        return "membro"
+    if "recrutador" in cargos:
+        return "recrutador"
+    if "gerente" in cargos:
+        return "gerente"
+
+    return None
+
+def meta_por_usuario(member: discord.Member) -> int | None:
+    """Retorna a meta baseada no cargo do usuário."""
+    config = garantir_config()
+    metas = config.get("metas", {})
+
+    cargo = cargo_do_usuario(member)
+    if not cargo:
+        return None
+
+    return metas.get(cargo)
 
 
 # =========================
@@ -24,7 +82,7 @@ class AnaliseView(discord.ui.View):
     async def aceitar(self, interaction: discord.Interaction, _):
         try:
             config = garantir_config()
-            canal = self.bot.get_channel(config["canal_aceitos"])
+            canal = self.bot.get_channel(config.get("canal_aceitos"))
 
             if not canal:
                 return await interaction.response.send_message(
@@ -51,7 +109,7 @@ class AnaliseView(discord.ui.View):
     async def recusar(self, interaction: discord.Interaction, _):
         try:
             config = garantir_config()
-            canal = self.bot.get_channel(config["canal_recusados"])
+            canal = self.bot.get_channel(config.get("canal_recusados"))
 
             if not canal:
                 return await interaction.response.send_message(
@@ -90,7 +148,7 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             config = garantir_config()
-            categoria = self.bot.get_channel(config["categoria_analise"])
+            categoria = self.bot.get_channel(config.get("categoria_analise"))
 
             if not categoria:
                 return await interaction.response.send_message(
@@ -103,7 +161,8 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
                 "🎖 Cargo": self.cargo,
                 "📦 Quantidade": self.quantidade.value,
                 "📍 Entregou para": self.entregue_para.value,
-                "📅 Data": datetime.now().strftime("%d/%m/%Y")
+                "📅 Data": datetime.now().strftime("%d/%m/%Y"),
+                "🎯 Meta": meta_por_usuario(interaction.user) or "Não configurada"
             }
 
             canal = await categoria.create_text_channel(
