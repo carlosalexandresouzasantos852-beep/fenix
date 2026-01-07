@@ -2,7 +2,7 @@
 import discord
 from discord.ext import commands, tasks
 from datetime import datetime, timedelta
-from meu_bot_farm.cogs.config_farm import garantir_config, salvar_config
+from meu_bot_farm.cogs.tickets import garantir_config, salvar_config  # <- alterado
 
 class ADV(commands.Cog):
     def __init__(self, bot):
