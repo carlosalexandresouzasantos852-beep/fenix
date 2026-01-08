@@ -1,10 +1,9 @@
 __pycache__/
 *.pyc
-.env
 .vscode/
 .idea/
 config.py
 meu_bot_farm/config.py
-.env
+..venv/
 __pycache__/
-*.pyc
+.env
