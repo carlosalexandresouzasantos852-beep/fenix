@@ -1,12 +1,11 @@
-# meu_bot_farm/cogs/tickets.py
 import os
 import json
 import discord
 from discord.ext import commands
 from discord import app_commands
 from datetime import datetime
-import traceback
 import asyncio
+import traceback
 
 # =========================
 # CONFIGURAÇÃO
@@ -45,21 +44,59 @@ def salvar_config(config):
 GIF_PAINEL = "https://cdn.discordapp.com/attachments/1266573285236408363/1452178207255040082/Adobe_Express_-_VID-20251221-WA0034.gif"
 
 # =========================
-# FUNÇÕES DE META
+# VIEW DE ANÁLISE (ACEITE/RECUSO)
 # =========================
-def cargo_do_usuario(member: discord.Member) -> str | None:
-    cargos = [r.name.lower() for r in member.roles]
-    for c in ["aviãozinho", "membro", "recrutador", "gerente"]:
-        if c in cargos:
-            return c
-    return None
+class AnaliseView(discord.ui.View):
+    def __init__(self, bot, dados):
+        super().__init__(timeout=None)
+        self.bot = bot
+        self.dados = dados
 
-def meta_por_usuario(member: discord.Member) -> int | None:
-    config = garantir_config()
-    cargo = cargo_do_usuario(member)
-    if not cargo:
-        return None
-    return config.get("metas", {}).get(cargo)
+    @discord.ui.button(label="✅ Aceitar", style=discord.ButtonStyle.success)
+    async def aceitar(self, interaction: discord.Interaction, _):
+        try:
+            config = garantir_config()
+            canal = self.bot.get_channel(config["canal_aceitos"])
+            if not canal:
+                return await interaction.response.send_message("❌ Canal de aceitos não configurado.", ephemeral=True)
+
+            embed = discord.Embed(
+                title="📦 ENTREGA DE FARM — ACEITA",
+                color=discord.Color.green(),
+                timestamp=datetime.now()
+            )
+            for k, v in self.dados.items():
+                embed.add_field(name=k, value=v, inline=False)
+
+            msg = await canal.send(embed=embed)
+            await asyncio.sleep(24*3600)
+            await msg.delete()
+            await interaction.channel.delete()
+        except Exception:
+            traceback.print_exc()
+
+    @discord.ui.button(label="❌ Recusar", style=discord.ButtonStyle.danger)
+    async def recusar(self, interaction: discord.Interaction, _):
+        try:
+            config = garantir_config()
+            canal = self.bot.get_channel(config["canal_recusados"])
+            if not canal:
+                return await interaction.response.send_message("❌ Canal de recusados não configurado.", ephemeral=True)
+
+            embed = discord.Embed(
+                title="❌ ENTREGA DE FARM — RECUSADA",
+                color=discord.Color.red(),
+                timestamp=datetime.now()
+            )
+            for k, v in self.dados.items():
+                embed.add_field(name=k, value=v, inline=False)
+
+            msg = await canal.send(embed=embed)
+            await asyncio.sleep(10*3600)
+            await msg.delete()
+            await interaction.channel.delete()
+        except Exception:
+            traceback.print_exc()
 
 # =========================
 # MODAL DE ENTREGA
@@ -95,50 +132,10 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
                 embed.add_field(name=k, value=v, inline=False)
 
             await canal.send(embed=embed, view=AnaliseView(self.bot, dados))
-            await interaction.response.send_message("✅ Entrega enviada para análise.", ephemeral=True)
-        except Exception:
-            traceback.print_exc()
-
-# =========================
-# VIEW DE ANÁLISE
-# =========================
-class AnaliseView(discord.ui.View):
-    def __init__(self, bot, dados):
-        super().__init__(timeout=None)
-        self.bot = bot
-        self.dados = dados
-
-    @discord.ui.button(label="✅ Aceitar", style=discord.ButtonStyle.success)
-    async def aceitar(self, interaction: discord.Interaction, _):
-        try:
-            config = garantir_config()
-            canal = self.bot.get_channel(config["canal_aceitos"])
-            if not canal:
-                return await interaction.response.send_message("❌ Canal de aceitos não configurado.", ephemeral=True)
-
-            embed = discord.Embed(title="📦 ENTREGA DE FARM — ACEITA", color=discord.Color.green(), timestamp=datetime.now())
-            for k, v in self.dados.items():
-                embed.add_field(name=k, value=v, inline=False)
-
-            await canal.send(embed=embed)
-            await interaction.channel.delete()
-        except Exception:
-            traceback.print_exc()
-
-    @discord.ui.button(label="❌ Recusar", style=discord.ButtonStyle.danger)
-    async def recusar(self, interaction: discord.Interaction, _):
-        try:
-            config = garantir_config()
-            canal = self.bot.get_channel(config["canal_recusados"])
-            if not canal:
-                return await interaction.response.send_message("❌ Canal de recusados não configurado.", ephemeral=True)
-
-            embed = discord.Embed(title="❌ ENTREGA DE FARM — RECUSADA", color=discord.Color.red(), timestamp=datetime.now())
-            for k, v in self.dados.items():
-                embed.add_field(name=k, value=v, inline=False)
-
-            await canal.send(embed=embed)
-            await interaction.channel.delete()
+            msg = await interaction.response.send_message("✅ Entrega enviada para análise.", ephemeral=True)
+            # Apaga mensagem após 5 segundos
+            await asyncio.sleep(5)
+            await msg.delete()
         except Exception:
             traceback.print_exc()
 
@@ -154,23 +151,57 @@ class PainelView(discord.ui.View):
     @discord.ui.select(
         placeholder="Selecione seu cargo para iniciar seu farm",
         options=[
-            discord.SelectOption(label="✈️ Aviãozinho"),
-            discord.SelectOption(label="👤 Membro"),
-            discord.SelectOption(label="📣 Recrutador"),
-            discord.SelectOption(label="🛡️ Gerente"),
+            discord.SelectOption(label="✈️ Aviãozinho", value="aviãozinho"),
+            discord.SelectOption(label="👤 Membro", value="membro"),
+            discord.SelectOption(label="📣 Recrutador", value="recrutador"),
+            discord.SelectOption(label="🛡️ Gerente", value="gerente"),
         ]
     )
     async def selecionar(self, interaction: discord.Interaction, select):
         self.cargo = select.values[0]
-        await interaction.response.send_message(f"✅ Cargo selecionado: **{self.cargo}**", ephemeral=True)
+        msg = await interaction.response.send_message(f"✅ Cargo selecionado: **{self.cargo}**", ephemeral=True)
+        await asyncio.sleep(5)
+        await msg.delete()
 
     @discord.ui.button(label="📦 ENTREGAR FARM", style=discord.ButtonStyle.green)
     async def entregar(self, interaction: discord.Interaction, _):
         if not self.cargo:
             return await interaction.response.send_message("❌ Selecione um cargo primeiro.", ephemeral=True)
         await interaction.response.send_modal(EntregaModal(self.bot, self.cargo))
-        # Resetar seleção para próxima entrega
+        # Reset do select após envio
         self.cargo = None
+
+# =========================
+# VIEW DO PAINEL DE STAFF
+# =========================
+class PainelStaffView(discord.ui.View):
+    def __init__(self, bot):
+        super().__init__(timeout=None)
+        self.bot = bot
+
+    @discord.ui.button(label="Entrega Farm", style=discord.ButtonStyle.green)
+    async def entrega_farm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("📦 Clique em !painelfarm para abrir o painel de membros.", ephemeral=True)
+
+    @discord.ui.button(label="Aplicar ADV", style=discord.ButtonStyle.red)
+    async def aplicar_adv(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Modal de aplicar ADV (implementação necessária)", ephemeral=True)
+
+    @discord.ui.button(label="Remover ADV", style=discord.ButtonStyle.grey)
+    async def remover_adv(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Modal de remover ADV (implementação necessária)", ephemeral=True)
+
+    @discord.ui.button(label="Ver VADV", style=discord.ButtonStyle.blurple)
+    async def ver_vadv(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("📋 Lista de ADV (implementação necessária)", ephemeral=True)
+
+    @discord.ui.button(label="Aplicar PD", style=discord.ButtonStyle.danger)
+    async def aplicar_pd(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("PD aplicado (implementação necessária)", ephemeral=True)
+
+    @discord.ui.button(label="Anúncio de Entrega", style=discord.ButtonStyle.green)
+    async def anuncio_entrega(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message("Modal de anúncio de entrega (implementação necessária)", ephemeral=True)
 
 # =========================
 # COG PRINCIPAL
@@ -183,34 +214,32 @@ class Tickets(commands.Cog):
     # Painel de membros
     # -------------------------
     @commands.command(name="painelfarm")
-    async def painelfarm(self, ctx: commands.Context):
+    async def painel_farm_cmd(self, ctx):
         embed = discord.Embed(
             title="📦 PAINEL DE FARM",
             description="Selecione seu cargo e registre a entrega.",
             color=discord.Color.blurple()
         )
         embed.set_image(url=GIF_PAINEL)
-        view = PainelView(self.bot)
-        await ctx.send(embed=embed, view=view)
+        await ctx.send(embed=embed, view=PainelView(self.bot))
 
     # -------------------------
-    # Painel Staff
+    # Painel de staff
     # -------------------------
     @commands.command(name="painelstaff")
-    async def painel_staff(self, ctx: commands.Context):
+    async def painel_staff_cmd(self, ctx):
         embed = discord.Embed(
             title="📋 PAINEL STAFF",
             description="Use os botões abaixo para gerenciar farm e ADV",
             color=discord.Color.blue()
         )
-        view = PainelStaffView(self.bot)
-        await ctx.send(embed=embed, view=view)
+        await ctx.send(embed=embed, view=PainelStaffView(self.bot))
 
     # -------------------------
     # Configuração do Ticket
     # -------------------------
-    @app_commands.command(name="config-ticket-farm", description="Configurar ticket de farm")
-    async def config_ticket_farm(self, interaction: discord.Interaction):
+    @commands.command(name="configticketfarm")
+    async def config_ticket_farm_cmd(self, ctx):
         config = garantir_config()
 
         class ConfigModal(discord.ui.Modal, title="Configuração Ticket Farm"):
@@ -227,9 +256,9 @@ class Tickets(commands.Cog):
                 config["canal_logs_adv"] = int(self_modal.canal_logs_adv.value)
                 config["canal_logs_pd"] = int(self_modal.canal_logs_pd.value)
                 salvar_config(config)
-                await interaction_modal.response.send_message("✅ Configuração salva com sucesso!", ephemeral=True)
-
-        await interaction.response.send_modal(ConfigModal())
+                msg = await interaction_modal.response.send_message("✅ Configuração salva com sucesso!", ephemeral=True)
+                await asyncio.sleep(5)
+                await msg.delete()
 
 # =========================
 # SETUP
