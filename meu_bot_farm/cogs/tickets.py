@@ -1,9 +1,9 @@
 import os
 import json
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 import traceback
 
@@ -44,7 +44,7 @@ def salvar_config(config):
 GIF_PAINEL = "https://cdn.discordapp.com/attachments/1266573285236408363/1452178207255040082/Adobe_Express_-_VID-20251221-WA0034.gif"
 
 # =========================
-# VIEW DE ANÁLISE (ACEITE/RECUSO)
+# VIEW DE ANÁLISE
 # =========================
 class AnaliseView(discord.ui.View):
     def __init__(self, bot, dados):
@@ -133,14 +133,13 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
 
             await canal.send(embed=embed, view=AnaliseView(self.bot, dados))
             msg = await interaction.response.send_message("✅ Entrega enviada para análise.", ephemeral=True)
-            # Apaga mensagem após 5 segundos
             await asyncio.sleep(5)
             await msg.delete()
         except Exception:
             traceback.print_exc()
 
 # =========================
-# VIEW DO PAINEL DE MEMBROS
+# PAINEL DE MEMBROS
 # =========================
 class PainelView(discord.ui.View):
     def __init__(self, bot):
@@ -149,7 +148,7 @@ class PainelView(discord.ui.View):
         self.cargo = None
 
     @discord.ui.select(
-        placeholder="Selecione seu cargo para iniciar seu farm",
+        placeholder="Selecione seu cargo",
         options=[
             discord.SelectOption(label="✈️ Aviãozinho", value="aviãozinho"),
             discord.SelectOption(label="👤 Membro", value="membro"),
@@ -168,50 +167,44 @@ class PainelView(discord.ui.View):
         if not self.cargo:
             return await interaction.response.send_message("❌ Selecione um cargo primeiro.", ephemeral=True)
         await interaction.response.send_modal(EntregaModal(self.bot, self.cargo))
-        # Reset do select após envio
         self.cargo = None
 
 # =========================
-# VIEW DO PAINEL DE STAFF
+# PAINEL STAFF
 # =========================
 class PainelStaffView(discord.ui.View):
     def __init__(self, bot):
         super().__init__(timeout=None)
         self.bot = bot
 
-    @discord.ui.button(label="Entrega Farm", style=discord.ButtonStyle.green)
-    async def entrega_farm(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("📦 Clique em !painelfarm para abrir o painel de membros.", ephemeral=True)
+    @discord.ui.button(label="Ver ADV", style=discord.ButtonStyle.blurple)
+    async def ver_adv(self, interaction: discord.Interaction, _):
+        await interaction.response.send_message("📋 Lista de ADV (implementação necessária)", ephemeral=True)
 
     @discord.ui.button(label="Aplicar ADV", style=discord.ButtonStyle.red)
-    async def aplicar_adv(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def aplicar_adv(self, interaction: discord.Interaction, _):
         await interaction.response.send_message("Modal de aplicar ADV (implementação necessária)", ephemeral=True)
 
     @discord.ui.button(label="Remover ADV", style=discord.ButtonStyle.grey)
-    async def remover_adv(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def remover_adv(self, interaction: discord.Interaction, _):
         await interaction.response.send_message("Modal de remover ADV (implementação necessária)", ephemeral=True)
 
-    @discord.ui.button(label="Ver VADV", style=discord.ButtonStyle.blurple)
-    async def ver_vadv(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("📋 Lista de ADV (implementação necessária)", ephemeral=True)
-
-    @discord.ui.button(label="Aplicar PD", style=discord.ButtonStyle.danger)
-    async def aplicar_pd(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("PD aplicado (implementação necessária)", ephemeral=True)
-
-    @discord.ui.button(label="Anúncio de Entrega", style=discord.ButtonStyle.green)
-    async def anuncio_entrega(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("Modal de anúncio de entrega (implementação necessária)", ephemeral=True)
+    @discord.ui.button(label="Visualizar Entregas", style=discord.ButtonStyle.green)
+    async def visualizar_entregas(self, interaction: discord.Interaction, _):
+        await interaction.response.send_message("📦 Visualizar entregas (implementação necessária)", ephemeral=True)
 
 # =========================
 # COG PRINCIPAL
 # =========================
 class Tickets(commands.Cog):
-    def __init__(self, bot):
+    def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.bot = bot
+        self.adv_aplicados = {}  # Armazena ADV aplicados
+        self.loop_adv.start()  # inicia loop semanal
 
     # -------------------------
-    # Painel de membros
+    # Painel Farm (prefixo)
     # -------------------------
     @commands.command(name="painelfarm")
     async def painel_farm_cmd(self, ctx):
@@ -224,7 +217,7 @@ class Tickets(commands.Cog):
         await ctx.send(embed=embed, view=PainelView(self.bot))
 
     # -------------------------
-    # Painel de staff
+    # Painel Staff (prefixo)
     # -------------------------
     @commands.command(name="painelstaff")
     async def painel_staff_cmd(self, ctx):
@@ -236,32 +229,56 @@ class Tickets(commands.Cog):
         await ctx.send(embed=embed, view=PainelStaffView(self.bot))
 
     # -------------------------
-    # Configuração do Ticket
+    # Config Ticket Farm (slash)
     # -------------------------
-    @commands.command(name="configticketfarm")
-    async def config_ticket_farm_cmd(self, ctx):
+    @app_commands.command(name="configticketfarm", description="Configuração completa do Ticket Farm")
+    @app_commands.describe(
+        meta_aviao="Meta de Aviãozinho",
+        meta_membro="Meta de Membro",
+        meta_recrutador="Meta de Recrutador",
+        meta_gerente="Meta de Gerente",
+        categoria_analise="Categoria de análise",
+        canal_aceitos="Canal de aceitos",
+        canal_recusados="Canal de recusados",
+        canal_adv="Canal de ADV"
+    )
+    async def config_ticket_farm(
+        self,
+        interaction: discord.Interaction,
+        meta_aviao: int,
+        meta_membro: int,
+        meta_recrutador: int,
+        meta_gerente: int,
+        categoria_analise: discord.TextChannel,
+        canal_aceitos: discord.TextChannel,
+        canal_recusados: discord.TextChannel,
+        canal_adv: discord.TextChannel
+    ):
         config = garantir_config()
+        config["metas"]["aviãozinho"] = meta_aviao
+        config["metas"]["membro"] = meta_membro
+        config["metas"]["recrutador"] = meta_recrutador
+        config["metas"]["gerente"] = meta_gerente
+        config["categoria_analise"] = categoria_analise.id
+        config["canal_aceitos"] = canal_aceitos.id
+        config["canal_recusados"] = canal_recusados.id
+        config["canal_logs_adv"] = canal_adv.id
+        salvar_config(config)
+        await interaction.response.send_message("✅ Configuração de Ticket Farm salva com sucesso!", ephemeral=True)
 
-        class ConfigModal(discord.ui.Modal, title="Configuração Ticket Farm"):
-            canal_aceitos = discord.ui.TextInput(label="ID do Canal de Aceitos", default=str(config.get("canal_aceitos", 0)))
-            canal_recusados = discord.ui.TextInput(label="ID do Canal de Recusados", default=str(config.get("canal_recusados", 0)))
-            categoria_analise = discord.ui.TextInput(label="ID da Categoria de Análise", default=str(config.get("categoria_analise", 0)))
-            canal_logs_adv = discord.ui.TextInput(label="ID do Canal de Logs ADV", default=str(config.get("canal_logs_adv", 0)))
-            canal_logs_pd = discord.ui.TextInput(label="ID do Canal de Logs PD", default=str(config.get("canal_logs_pd", 0)))
-
-            async def on_submit(self_modal, interaction_modal: discord.Interaction):
-                config["canal_aceitos"] = int(self_modal.canal_aceitos.value)
-                config["canal_recusados"] = int(self_modal.canal_recusados.value)
-                config["categoria_analise"] = int(self_modal.categoria_analise.value)
-                config["canal_logs_adv"] = int(self_modal.canal_logs_adv.value)
-                config["canal_logs_pd"] = int(self_modal.canal_logs_pd.value)
-                salvar_config(config)
-                msg = await interaction_modal.response.send_message("✅ Configuração salva com sucesso!", ephemeral=True)
-                await asyncio.sleep(5)
-                await msg.delete()
+    # -------------------------
+    # LOOP AUTOMÁTICO DE ADV SEMANAL
+    # -------------------------
+    @tasks.loop(hours=24)
+    async def loop_adv(self):
+        now = datetime.utcnow()
+        if now.weekday() == 0:  # Segunda-feira
+            self.adv_aplicados.clear()  # reset lista ADV semanal
 
 # =========================
 # SETUP
 # =========================
-async def setup(bot):
+async def setup(bot: commands.Bot):
     await bot.add_cog(Tickets(bot))
+    await bot.tree.sync()
+    print("Tickets cog carregado e comandos globais sincronizados!")
