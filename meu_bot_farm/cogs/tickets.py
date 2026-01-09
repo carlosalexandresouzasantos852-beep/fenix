@@ -1,5 +1,5 @@
 # =========================
-# TICKETS.PY — SISTEMA FARM COMPLETO FINAL
+# TICKETS.PY — SISTEMA FARM COMPLETO FINAL (CORRIGIDO)
 # =========================
 
 import os
@@ -7,7 +7,7 @@ import json
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
-from datetime import datetime, timedelta
+from datetime import datetime
 import asyncio
 
 CONFIG_PATH = "meu_bot_farm/data/config_farm.json"
@@ -211,38 +211,56 @@ class PainelFarmView(discord.ui.View):
         self.meta = None
 
         cfg = garantir_config()
-        self.select.options.clear()
+        options = []
 
         for cid, meta in cfg["cargos"].items():
             role = guild.get_role(int(cid))
             if role:
-                self.select.add_option(
-                    label=role.name,
-                    value=f"{role.name}|{meta}"
+                options.append(
+                    discord.SelectOption(
+                        label=role.name,
+                        value=f"{role.name}|{meta}"
+                    )
                 )
 
-    @discord.ui.select(placeholder="Selecione seu cargo")
-    async def select(self, interaction: discord.Interaction, select):
-        nome, meta = select.values[0].split("|")
-        self.cargo = nome
-        self.meta = int(meta)
+        self.add_item(PainelSelect(options, self))
 
-        select.placeholder = "Selecione seu cargo"
-        select.values.clear()
 
-        await interaction.response.edit_message(view=self)
+class PainelSelect(discord.ui.Select):
+    def __init__(self, options, parent):
+        super().__init__(
+            placeholder="Selecione seu cargo",
+            options=options,
+            min_values=1,
+            max_values=1
+        )
+        self.parent = parent
 
-    @discord.ui.button(label="📦 Entregar Farm", style=discord.ButtonStyle.green)
-    async def entregar(self, interaction: discord.Interaction, _):
-        if not self.cargo:
+    async def callback(self, interaction: discord.Interaction):
+        nome, meta = self.values[0].split("|")
+        self.parent.cargo = nome
+        self.parent.meta = int(meta)
+        await interaction.response.defer(ephemeral=True)
+
+
+class EntregarButton(discord.ui.Button):
+    def __init__(self, parent):
+        super().__init__(label="📦 Entregar Farm", style=discord.ButtonStyle.green)
+        self.parent = parent
+
+    async def callback(self, interaction: discord.Interaction):
+        if not self.parent.cargo:
             return await interaction.response.send_message(
                 "❌ Selecione um cargo.",
                 ephemeral=True
             )
-
         await interaction.response.send_modal(
-            EntregaModal(self.cargo, self.meta)
+            EntregaModal(self.parent.cargo, self.parent.meta)
         )
+
+
+PainelFarmView.add_item = lambda self, item: super(PainelFarmView, self).add_item(item)
+PainelFarmView.add_item(PainelFarmView, EntregarButton(PainelFarmView))
 
 
 # =========================
@@ -329,34 +347,6 @@ class Tickets(commands.Cog):
         cfg["cargos"][str(cargo.id)] = meta
         salvar_config(cfg)
         await interaction.response.send_message("✅ Cargo adicionado ao painel.", ephemeral=True)
-
-    @app_commands.command(name="configticketfarm")
-    async def configticketfarm(
-        self,
-        interaction: discord.Interaction,
-        meta_aviao: int,
-        meta_membro: int,
-        meta_recrutador: int,
-        meta_gerente: int,
-        categoria_analise: discord.CategoryChannel,
-        canal_aceitos: discord.TextChannel,
-        canal_recusados: discord.TextChannel,
-        canal_adv: discord.TextChannel
-    ):
-        config = get_config()
-        config["metas"] = {
-            "aviãozinho": meta_aviao,
-            "membro": meta_membro,
-            "recrutador": meta_recrutador,
-            "gerente": meta_gerente
-        }
-        config["categoria_analise"] = categoria_analise.id
-        config["canal_aceitos"] = canal_aceitos.id
-        config["canal_recusados"] = canal_recusados.id
-        config["canal_logs_adv"] = canal_adv.id
-        save_json(CONFIG_PATH, config)
-
-        await interaction.response.send_message("Configuração salva!", ephemeral=True)
 
     @tasks.loop(hours=1)
     async def loop_semanal(self):
