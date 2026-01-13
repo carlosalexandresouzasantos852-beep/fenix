@@ -22,7 +22,6 @@ class MeuBot(commands.Bot):
         cogs = [
             "meu_bot_farm.cogs.tickets",
             "meu_bot_farm.cogs.metas",
-            "meu_bot_farm.cogs.adv_automatico",
         ]
 
         for cog in cogs:
