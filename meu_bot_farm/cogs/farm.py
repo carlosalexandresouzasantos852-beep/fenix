@@ -2,25 +2,44 @@ import discord
 from discord.ext import commands
 import json
 import os
+from datetime import datetime
 
 CONFIG = "meu_bot_farm/data/config_farm.json"
-ENTREGAS = "meu_bot_farm/data/entregas.json"
-
 
 # ================= JSON =================
-def load(path, default):
-    if not os.path.exists(path):
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(default, f, indent=4, ensure_ascii=False)
+def load_config():
+    if not os.path.exists(CONFIG):
+        os.makedirs(os.path.dirname(CONFIG), exist_ok=True)
+        with open(CONFIG, "w", encoding="utf-8") as f:
+            json.dump({"guilds": {}}, f, indent=4, ensure_ascii=False)
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(CONFIG, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
-def save(path, data):
-    with open(path, "w", encoding="utf-8") as f:
+def save_config(data):
+    with open(CONFIG, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
+
+
+def garantir_guild(cfg, guild_id):
+    gid = str(guild_id)
+    cfg.setdefault("guilds", {})
+    cfg["guilds"].setdefault(gid, {})
+    g = cfg["guilds"][gid]
+
+    g.setdefault("metas", {})
+    g.setdefault("entregas_semana", {})
+
+    return g
+
+
+# ================= UTIL =================
+def cargo_valido(member: discord.Member, metas: dict) -> str | None:
+    for role in member.roles:
+        if role.name.lower() in metas:
+            return role.name.lower()
+    return None
 
 
 # ================= MODAL =================
@@ -37,35 +56,45 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
         required=True
     )
 
-    def __init__(self, cargo: str):
-        super().__init__()
-        self.cargo = cargo.lower()  # 🔥 normalizado
-
     async def on_submit(self, interaction: discord.Interaction):
-        config = load(CONFIG, {})
-        entregas = load(ENTREGAS, {})
+        cfg = load_config()
+        g = garantir_guild(cfg, interaction.guild.id)
 
-        metas = config.get("metas", {})
-        meta = metas.get(self.cargo)
+        metas = g["metas"]
+        cargo = cargo_valido(interaction.user, metas)
 
-        if meta is None:
+        if not cargo:
             await interaction.response.send_message(
-                "❌ A meta para esse cargo **não foi configurada**.",
+                "❌ Você não possui **nenhum cargo válido** para entrega de farm.",
+                ephemeral=True
+            )
+            return
+
+        try:
+            quantidade = int(self.quantidade.value)
+        except ValueError:
+            await interaction.response.send_message(
+                "❌ Quantidade inválida.",
                 ephemeral=True
             )
             return
 
         uid = str(interaction.user.id)
-        entregas.setdefault(uid, 0)
-        entregas[uid] += int(self.quantidade.value)
 
-        save(ENTREGAS, entregas)
+        # 🔥 MARCA COMO ENTREGUE NA SEMANA
+        g["entregas_semana"][uid] = {
+            "cargo": cargo,
+            "quantidade": quantidade,
+            "data": datetime.now().strftime("%d/%m/%Y %H:%M")
+        }
+
+        save_config(cfg)
 
         await interaction.response.send_message(
             f"✅ **Entrega registrada com sucesso!**\n\n"
-            f"👤 Cargo: **{self.cargo.capitalize()}**\n"
-            f"📦 Quantidade: **{self.quantidade.value}**\n"
-            f"🎯 Meta: **{meta}**",
+            f"👤 Cargo: **{cargo.capitalize()}**\n"
+            f"📦 Quantidade: **{quantidade}**\n"
+            f"🎯 Meta: **{metas[cargo]}**",
             ephemeral=True
         )
 
@@ -74,34 +103,10 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
 class PainelEntregaView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-        self.cargo = None
-
-    @discord.ui.select(
-        placeholder="Selecione seu cargo",
-        options=[
-            discord.SelectOption(label="Aviãozinho", value="aviãozinho"),
-            discord.SelectOption(label="Membro", value="membro"),
-            discord.SelectOption(label="Recrutador", value="recrutador"),
-            discord.SelectOption(label="Gerente", value="gerente"),
-        ]
-    )
-    async def selecionar_cargo(self, interaction: discord.Interaction, select):
-        self.cargo = select.values[0]  # já vem lowercase
-        await interaction.response.send_message(
-            f"✅ Cargo selecionado: **{self.cargo.capitalize()}**",
-            ephemeral=True
-        )
 
     @discord.ui.button(label="📦 ENTREGAR FARM", style=discord.ButtonStyle.green)
     async def entregar(self, interaction: discord.Interaction, _):
-        if not self.cargo:
-            await interaction.response.send_message(
-                "❌ Selecione seu cargo antes de entregar.",
-                ephemeral=True
-            )
-            return
-
-        await interaction.response.send_modal(EntregaModal(self.cargo))
+        await interaction.response.send_modal(EntregaModal())
 
 
 # ================= COG =================
@@ -111,11 +116,16 @@ class Farm(commands.Cog):
 
     @commands.command(name="painelfarm")
     async def painel_farm(self, ctx):
-        await ctx.send(
-            "📦 **Painel de Entrega de Farm**",
-            view=PainelEntregaView()
+        embed = discord.Embed(
+            title="📦 PAINEL DE ENTREGA DE FARM",
+            description="Clique no botão abaixo para registrar sua entrega.",
+            color=discord.Color.green()
         )
 
+        await ctx.send(embed=embed, view=PainelEntregaView())
 
+
+# ================= SETUP =================
 async def setup(bot):
     await bot.add_cog(Farm(bot))
+    print("✅ Farm carregado — integrado ao ADV automático")

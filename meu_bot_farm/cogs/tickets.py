@@ -1,18 +1,20 @@
 # =========================
-# TICKETS.PY — SISTEMA FARM DEFINITIVO (FINAL)
+# TICKETS.PY — SISTEMA FARM DEFINITIVO
 # =========================
 
 import os
 import json
 import discord
 from discord.ext import commands, tasks
+from discord import app_commands
 from datetime import datetime, timedelta
+import asyncio
 
 CONFIG_PATH = "meu_bot_farm/data/config_farm.json"
 GIF_PAINEL = "https://cdn.discordapp.com/attachments/1266573285236408363/1452178207255040082/Adobe_Express_-_VID-20251221-WA0034.gif"
 
 # =========================
-# CONFIG (ISOLADO POR GUILD)
+# CONFIG GLOBAL (ISOLADO)
 # =========================
 def garantir_config():
     if not os.path.exists(CONFIG_PATH):
@@ -40,11 +42,10 @@ def garantir_guild(cfg, gid):
             "historico_adv": {},
             "agendamento_adv": {
                 "ativo": True,
-                "weekday": 6,  # Domingo
+                "weekday": 6,
                 "hora": 0,
                 "minuto": 0,
-                "aviso_1h_enviado": False,
-                "ultima_execucao": None
+                "aviso_1h_enviado": False
             }
         }
     return cfg["guilds"][gid]
@@ -54,7 +55,7 @@ def garantir_guild(cfg, gid):
 # =========================
 class AplicarAdvModal(discord.ui.Modal, title="➕ Aplicar ADV"):
     usuario = discord.ui.TextInput(label="ID do usuário", required=True)
-    motivo = discord.ui.TextInput(label="Motivo", required=True)
+    motivo = discord.ui.TextInput(label="Motivo do ADV", required=True)
 
     async def on_submit(self, interaction: discord.Interaction):
         cfg = garantir_config()
@@ -101,7 +102,9 @@ class PainelStaffView(discord.ui.View):
         ag = g["agendamento_adv"]
 
         agora = datetime.now()
-        alvo = agora + timedelta(days=(ag["weekday"] - agora.weekday()) % 7)
+        alvo = agora + timedelta(
+            days=(ag["weekday"] - agora.weekday()) % 7
+        )
         alvo = alvo.replace(hour=ag["hora"], minute=ag["minuto"], second=0)
 
         delta = alvo - agora
@@ -117,7 +120,7 @@ class PainelStaffView(discord.ui.View):
         g = garantir_guild(cfg, self.guild_id)
         g["agendamento_adv"]["ativo"] = False
         salvar_config(cfg)
-        await interaction.response.send_message("❌ ADV automático cancelado.", ephemeral=True)
+        await interaction.response.send_message("❌ ADV da semana cancelado.", ephemeral=True)
 
     @discord.ui.button(label="👀 Ver ADV ativos", style=discord.ButtonStyle.gray)
     async def ver_adv(self, interaction: discord.Interaction, _):
@@ -138,7 +141,7 @@ class PainelStaffView(discord.ui.View):
         cfg = garantir_config()
         g = garantir_guild(cfg, self.guild_id)
 
-        embed = discord.Embed(title="📜 Histórico ADV", color=discord.Color.dark_red())
+        embed = discord.Embed(title="📜 Histórico de ADV", color=discord.Color.dark_red())
         for uid, lista in g["historico_adv"].items():
             embed.add_field(name=uid, value="\n".join(lista[-5:]), inline=False)
 
@@ -159,7 +162,6 @@ class Tickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.loop_adv.start()
-        self.loop_reset.start()
 
     @commands.command()
     async def painelstaff(self, ctx):
@@ -171,9 +173,6 @@ class Tickets(commands.Cog):
         embed.set_image(url=GIF_PAINEL)
         await ctx.send(embed=embed, view=PainelStaffView(ctx.guild.id))
 
-    # =========================
-    # LOOP ADV AUTOMÁTICO
-    # =========================
     @tasks.loop(minutes=1)
     async def loop_adv(self):
         cfg = garantir_config()
@@ -184,10 +183,6 @@ class Tickets(commands.Cog):
             if not ag["ativo"]:
                 continue
 
-            if agora.weekday() != ag["weekday"]:
-                ag["aviso_1h_enviado"] = False
-                continue
-
             alvo = agora.replace(hour=ag["hora"], minute=ag["minuto"], second=0)
 
             # AVISO 1H ANTES
@@ -195,12 +190,12 @@ class Tickets(commands.Cog):
                 guild = self.bot.get_guild(int(gid))
                 canal = guild.get_channel(g["canal_logs_adv"])
                 if canal:
-                    await canal.send("⚠️ ADV automático será aplicado em **1 hora**.")
+                    await canal.send("⚠️ ADV automático será aplicado em 1 hora.")
                 ag["aviso_1h_enviado"] = True
                 salvar_config(cfg)
 
             # APLICAR ADV
-            if agora >= alvo and ag["ultima_execucao"] != alvo.isoformat():
+            if agora.weekday() == ag["weekday"] and agora.hour == ag["hora"] and agora.minute == ag["minuto"]:
                 guild = self.bot.get_guild(int(gid))
                 cargos_validos = set(g["metas"].keys())
 
@@ -214,28 +209,14 @@ class Tickets(commands.Cog):
                             f"ADV automático — {agora.strftime('%d/%m/%Y')}"
                         )
 
-                ag["ultima_execucao"] = alvo.isoformat()
-                salvar_config(cfg)
-
-    # =========================
-    # RESET TOTAL SEGUNDA 00:00
-    # =========================
-    @tasks.loop(minutes=5)
-    async def loop_reset(self):
-        cfg = garantir_config()
-        agora = datetime.now()
-
-        if agora.weekday() == 0 and agora.hour == 0:
-            for g in cfg["guilds"].values():
                 g["entregas_semana"] = {}
-                g["adv_ativos"] = {}
-                g["agendamento_adv"]["ativo"] = True
-                g["agendamento_adv"]["ultima_execucao"] = None
-            salvar_config(cfg)
+                ag["aviso_1h_enviado"] = False
+                salvar_config(cfg)
 
 # =========================
 # SETUP
 # =========================
 async def setup(bot):
     await bot.add_cog(Tickets(bot))
-    print("✅ Tickets carregado — SISTEMA FINAL")
+    await bot.tree.sync()
+    print("✅ Tickets carregado — SISTEMA DEFINITIVO")
