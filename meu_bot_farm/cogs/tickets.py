@@ -8,7 +8,6 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands
 from datetime import datetime, timedelta
-import asyncio
 
 CONFIG_PATH = "meu_bot_farm/data/config_farm.json"
 GIF_PAINEL = "https://cdn.discordapp.com/attachments/1266573285236408363/1452178207255040082/Adobe_Express_-_VID-20251221-WA0034.gif"
@@ -38,6 +37,7 @@ def garantir_guild(cfg, gid):
             "canal_logs_adv": 0,
             "metas": {},
             "entregas_semana": {},
+            "entregas_historico": [],
             "adv_ativos": {},
             "historico_adv": {},
             "adv_agendado": {
@@ -75,7 +75,6 @@ def cronometro(ag):
 # ======================================================
 class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
     quantidade = discord.ui.TextInput(label="Quantidade entregue", required=True)
-    para = discord.ui.TextInput(label="Para quem foi entregue?", required=True)
 
     def __init__(self, guild_id, cargo):
         super().__init__()
@@ -94,25 +93,27 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
 
         qtd = int(self.quantidade.value)
         meta = g["metas"].get(self.cargo)
-        status = "✅ Meta concluída" if qtd >= meta else f"❌ Faltaram {meta - qtd}"
+
+        status = "✅ Meta concluída"
+        if qtd < meta:
+            status = f"❌ Faltaram {meta - qtd}"
 
         g["entregas_semana"][uid] = True
-        g["entregas_historico"] = g.get("entregas_historico", [])
         g["entregas_historico"].append({
             "nome": interaction.user.display_name,
             "cargo": self.cargo,
             "quantidade": qtd,
-            "para": self.para.value,
-            "status": status,
             "data": datetime.now().strftime("%d/%m/%Y %H:%M")
         })
+
         salvar_config(cfg)
 
-        # CRIA CANAL DE ANÁLISE TEMPORÁRIO
+        # CANAL DE ANÁLISE
         guild = interaction.guild
         categoria = guild.get_channel(g["categoria_analise"])
         canal = await guild.create_text_channel(
-            f"analise-{interaction.user.name}", category=categoria
+            f"analise-{interaction.user.name}",
+            category=categoria
         )
 
         embed = discord.Embed(title="📦 Análise de Entrega", color=discord.Color.blurple())
@@ -121,34 +122,14 @@ class EntregaModal(discord.ui.Modal, title="📦 Entrega de Farm"):
         embed.add_field(name="🎯 Meta", value=str(meta), inline=False)
         embed.add_field(name="📦 Quantidade", value=str(qtd), inline=False)
         embed.add_field(name="📊 Status", value=status, inline=False)
-        embed.add_field(name="📌 Para quem?", value=self.para.value, inline=False)
-        embed.set_footer(text=f"📆 Data: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+        embed.add_field(name="📌 Para quem?", value=interaction.user.display_name, inline=False)
+        embed.add_field(name="📆 Data", value=datetime.now().strftime("%d/%m/%Y %H:%M"), inline=False)
 
-        # BOTÕES ACEITAR/RECUSAR
-        class AnaliseButtons(discord.ui.View):
-            def __init__(self):
-                super().__init__(timeout=None)
-
-            @discord.ui.button(label="✅ Aceitar", style=discord.ButtonStyle.green)
-            async def aceitar(self, btn_interaction: discord.Interaction, button):
-                canal_aceito = guild.get_channel(g["canal_aceitos"])
-                msg = await canal_aceito.send(embed=embed)
-                await asyncio.sleep(24 * 3600)
-                await msg.delete()
-                await canal.delete()
-                await btn_interaction.response.send_message("Entrega aceita!", ephemeral=True)
-
-            @discord.ui.button(label="❌ Recusar", style=discord.ButtonStyle.red)
-            async def recusar(self, btn_interaction: discord.Interaction, button):
-                canal_recusado = guild.get_channel(g["canal_recusados"])
-                msg = await canal_recusado.send(embed=embed)
-                await asyncio.sleep(10 * 3600)
-                await msg.delete()
-                await canal.delete()
-                await btn_interaction.response.send_message("Entrega recusada!", ephemeral=True)
-
-        await canal.send(embed=embed, view=AnaliseButtons())
-        await interaction.response.send_message("✅ Entrega enviada para análise.", ephemeral=True, delete_after=5)
+        await canal.send(embed=embed)
+        msg = await interaction.response.send_message("✅ Entrega enviada para análise.", ephemeral=True)
+        # Deletar mensagem após 5 segundos
+        await asyncio.sleep(5)
+        await interaction.delete_original_response()
 
 # ======================================================
 # PAINEL FARM
@@ -162,38 +143,22 @@ class PainelFarmView(discord.ui.View):
     @discord.ui.select(placeholder="Selecione seu cargo", options=[])
     async def select_cargo(self, interaction: discord.Interaction, select):
         self.cargo = select.values[0]
-        await interaction.response.send_message(f"Cargo selecionado: **{self.cargo}**", ephemeral=True, delete_after=5)
+        msg = await interaction.response.send_message(
+            f"Cargo selecionado: **{self.cargo}**", ephemeral=True
+        )
+        await asyncio.sleep(5)
+        await interaction.delete_original_response()
 
     @discord.ui.button(label="📦 Entregar Farm", style=discord.ButtonStyle.green)
     async def entregar(self, interaction: discord.Interaction, _):
         if not self.cargo:
-            return await interaction.response.send_message("❌ Selecione o cargo primeiro.", ephemeral=True, delete_after=5)
-        await interaction.response.send_modal(EntregaModal(interaction.guild.id, self.cargo))
+            return await interaction.response.send_message(
+                "❌ Selecione o cargo primeiro.", ephemeral=True
+            )
+        await interaction.response.send_modal(
+            EntregaModal(interaction.guild.id, self.cargo)
+        )
         self.cargo = None
-
-# ======================================================
-# MODAL AGENDAR ADV
-# ======================================================
-class AgendarADVModal(discord.ui.Modal, title="📅 Agendar ADV"):
-    hora = discord.ui.TextInput(label="Hora (0-23)", required=True)
-    minuto = discord.ui.TextInput(label="Minuto (0-59)", required=True)
-    dia_semana = discord.ui.TextInput(label="Dia da semana (0=Seg ... 6=Dom)", required=True)
-
-    def __init__(self, guild_id):
-        super().__init__()
-        self.guild_id = guild_id
-
-    async def on_submit(self, interaction: discord.Interaction):
-        cfg = garantir_config()
-        g = garantir_guild(cfg, self.guild_id)
-        g["adv_agendado"]["hora"] = int(self.hora.value)
-        g["adv_agendado"]["minuto"] = int(self.minuto.value)
-        g["adv_agendado"]["weekday"] = int(self.dia_semana.value)
-        g["adv_agendado"]["ativo"] = True
-        g["adv_agendado"]["aviso_1h"] = False
-        g["adv_agendado"]["ultima_execucao"] = None
-        salvar_config(cfg)
-        await interaction.response.send_message("✅ ADV agendado!", ephemeral=True, delete_after=5)
 
 # ======================================================
 # PAINEL STAFF
@@ -204,14 +169,17 @@ class PainelStaffView(discord.ui.View):
         self.guild_id = guild_id
 
     @discord.ui.button(label="📅 Próximo ADV", style=discord.ButtonStyle.blurple)
-    async def proximo_adv_btn(self, interaction: discord.Interaction, _):
+    async def proximo(self, interaction: discord.Interaction, _):
         cfg = garantir_config()
         g = garantir_guild(cfg, self.guild_id)
         alvo = proximo_adv(g["adv_agendado"])
-        await interaction.response.send_message(f"📅 {alvo.strftime('%d/%m %H:%M')}\n{cronometro(g['adv_agendado'])}", ephemeral=True)
+        await interaction.response.send_message(
+            f"📅 {alvo.strftime('%d/%m %H:%M')}\n{cronometro(g['adv_agendado'])}",
+            ephemeral=True
+        )
 
     @discord.ui.button(label="⚠️ Ver ADV", style=discord.ButtonStyle.gray)
-    async def ver_adv_btn(self, interaction: discord.Interaction, _):
+    async def ver_adv(self, interaction: discord.Interaction, _):
         cfg = garantir_config()
         g = garantir_guild(cfg, self.guild_id)
         embed = discord.Embed(title="⚠️ ADV Ativos", color=discord.Color.red())
@@ -219,38 +187,12 @@ class PainelStaffView(discord.ui.View):
             embed.description = "Nenhum ADV ativo."
         else:
             for adv in g["adv_ativos"].values():
-                embed.add_field(name=adv["nome"], value=f"{adv['quantidade']}/5 — {adv['motivo']}", inline=False)
+                embed.add_field(
+                    name=adv["nome"],
+                    value=f"ADV {adv['quantidade']}/5 — {adv['motivo']}",
+                    inline=False
+                )
         await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @discord.ui.button(label="📌 V Entregas", style=discord.ButtonStyle.gray)
-    async def ver_entregas_btn(self, interaction: discord.Interaction, _):
-        cfg = garantir_config()
-        g = garantir_guild(cfg, self.guild_id)
-        embed = discord.Embed(title="📦 Entregas Semana", color=discord.Color.green())
-        for e in g.get("entregas_historico", []):
-            embed.add_field(
-                name=f"👤 {e['nome']}",
-                value=f"🥇 {e['cargo']}\n📦 {e['quantidade']}\n📌 Para: {e['para']}\n📊 {e['status']}\n📆 {e['data']}",
-                inline=False
-            )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-
-    @discord.ui.button(label="📅 Agendar ADV", style=discord.ButtonStyle.green)
-    async def agendar_adv_btn(self, interaction: discord.Interaction, _):
-        await interaction.response.send_modal(AgendarADVModal(self.guild_id))
-
-    @discord.ui.button(label="❌ Cancelar Agendamento", style=discord.ButtonStyle.red)
-    async def cancelar_agendamento_btn(self, interaction: discord.Interaction, _):
-        cfg = garantir_config()
-        g = garantir_guild(cfg, self.guild_id)
-        g["adv_agendado"]["ativo"] = True
-        g["adv_agendado"]["weekday"] = 6
-        g["adv_agendado"]["hora"] = 0
-        g["adv_agendado"]["minuto"] = 0
-        g["adv_agendado"]["aviso_1h"] = False
-        g["adv_agendado"]["ultima_execucao"] = None
-        salvar_config(cfg)
-        await interaction.response.send_message("✅ Agendamento cancelado. ADV volta para domingo.", ephemeral=True, delete_after=5)
 
 # ======================================================
 # COG PRINCIPAL
@@ -266,8 +208,14 @@ class Tickets(commands.Cog):
         cfg = garantir_config()
         g = garantir_guild(cfg, ctx.guild.id)
         view = PainelFarmView(ctx.guild.id)
-        view.select_cargo.options = [discord.SelectOption(label=c) for c in g["metas"]]
-        embed = discord.Embed(title="📦 Painel Farm", description=cronometro(g["adv_agendado"]), color=discord.Color.blurple())
+        view.select_cargo.options = [
+            discord.SelectOption(label=c) for c in g["metas"]
+        ]
+        embed = discord.Embed(
+            title="📦 Painel Farm",
+            description=cronometro(g["adv_agendado"]),
+            color=discord.Color.blurple()
+        )
         embed.set_image(url=GIF_PAINEL)
         await ctx.send(embed=embed, view=view)
 
@@ -275,15 +223,24 @@ class Tickets(commands.Cog):
     async def painelstaff(self, ctx):
         cfg = garantir_config()
         g = garantir_guild(cfg, ctx.guild.id)
-        embed = discord.Embed(title="📋 Painel Staff", description=cronometro(g["adv_agendado"]), color=discord.Color.dark_blue())
+        embed = discord.Embed(
+            title="📋 Painel Staff",
+            description=cronometro(g["adv_agendado"]),
+            color=discord.Color.dark_blue()
+        )
         embed.set_image(url=GIF_PAINEL)
         await ctx.send(embed=embed, view=PainelStaffView(ctx.guild.id))
 
-    # ================= SLASH COMMANDS (MANTIDOS)
-    @app_commands.command(name="configticketFarm")
+    # SLASH COMMANDS (MANTIDOS)
+    @app_commands.command(name="configticketfarm")
     @app_commands.checks.has_permissions(administrator=True)
-    async def configticketFarm(self, interaction: discord.Interaction,
-        meta_aviao: int, meta_membro: int, meta_recrutador: int, meta_gerente: int,
+    async def configticketfarm(
+        self,
+        interaction: discord.Interaction,
+        meta_aviao: int,
+        meta_membro: int,
+        meta_recrutador: int,
+        meta_gerente: int,
         categoria_analise: discord.CategoryChannel,
         canal_aceitos: discord.TextChannel,
         canal_recusados: discord.TextChannel,
@@ -302,16 +259,20 @@ class Tickets(commands.Cog):
         g["canal_recusados"] = canal_recusados.id
         g["canal_logs_adv"] = canal_adv.id
         salvar_config(cfg)
-        await interaction.response.send_message("✅ Configuração concluída.", ephemeral=True, delete_after=5)
+        msg = await interaction.response.send_message("✅ Configuração concluída.", ephemeral=True)
+        await asyncio.sleep(5)
+        await interaction.delete_original_response()
 
-    @app_commands.command(name="addCargo")
+    @app_commands.command(name="addcargo")
     @app_commands.checks.has_permissions(administrator=True)
-    async def addCargo(self, interaction: discord.Interaction, cargo: discord.Role, meta: int):
+    async def addcargo(self, interaction: discord.Interaction, cargo: discord.Role, meta: int):
         cfg = garantir_config()
         g = garantir_guild(cfg, interaction.guild.id)
         g["metas"][cargo.name] = meta
         salvar_config(cfg)
-        await interaction.response.send_message("Cargo adicionado.", ephemeral=True, delete_after=5)
+        msg = await interaction.response.send_message("Cargo adicionado.", ephemeral=True)
+        await asyncio.sleep(5)
+        await interaction.delete_original_response()
 
     # ================= ADV AUTOMÁTICO =================
     @tasks.loop(minutes=1)
@@ -331,12 +292,23 @@ class Tickets(commands.Cog):
             if agora >= alvo and ag["ultima_execucao"] != alvo.isoformat():
                 embed = discord.Embed(title="⚠️ ADV AUTOMÁTICO", color=discord.Color.red())
                 for m in guild.members:
-                    if m.bot: continue
-                    if not any(r.name in g["metas"] for r in m.roles): continue
-                    if str(m.id) in g["entregas_semana"]: continue
-                    adv = g["adv_ativos"].setdefault(str(m.id), {"nome": m.display_name,"quantidade":0,"motivo":"Não entregou farm"})
+                    if m.bot:
+                        continue
+                    if not any(r.name in g["metas"] for r in m.roles):
+                        continue
+                    if str(m.id) in g["entregas_semana"]:
+                        continue
+                    adv = g["adv_ativos"].setdefault(str(m.id), {
+                        "nome": m.display_name,
+                        "quantidade": 0,
+                        "motivo": "Não entregou farm"
+                    })
                     adv["quantidade"] += 1
-                    embed.add_field(name=m.display_name, value=f"ADV {adv['quantidade']}/5", inline=False)
+                    embed.add_field(
+                        name=m.display_name,
+                        value=f"ADV {adv['quantidade']}/5",
+                        inline=False
+                    )
                 await canal.send(embed=embed)
                 ag["ultima_execucao"] = alvo.isoformat()
                 salvar_config(cfg)
