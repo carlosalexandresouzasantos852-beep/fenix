@@ -292,6 +292,91 @@ class PainelStaffView(discord.ui.View):
         salvar_config(cfg)
         await interaction.response.send_message("✅ Agendamento cancelado. Domingo voltou a ser o padrão.", ephemeral=True)
 
+# ======================================================
+# COG
+# ======================================================
+class Tickets(commands.Cog):
+    def _init_(self, bot):
+        self.bot = bot
+        if not loop_adv.is_running():
+            loop_adv.start(bot)
+
+    @commands.command()
+    async def painelfarm(self, ctx):
+        cfg = garantir_config()
+        g = garantir_guild(cfg, ctx.guild.id)
+
+        embed = discord.Embed(
+            title="📦 Painel Farm",
+            description=cronometro(g["adv_agendado"]),
+            color=discord.Color.blurple()
+        )
+        embed.set_image(url=GIF_PAINEL)
+
+        await ctx.send(embed=embed, view=PainelFarmView(ctx.guild.id, g["metas"].keys()))
+
+    @commands.command()
+    async def painelstaff(self, ctx):
+        cfg = garantir_config()
+        g = garantir_guild(cfg, ctx.guild.id)
+
+        embed = discord.Embed(
+            title="📋 Painel Staff",
+            description=cronometro(g["adv_agendado"]),
+            color=discord.Color.dark_blue()
+        )
+        embed.set_image(url=GIF_PAINEL)
+
+        await ctx.send(embed=embed, view=PainelStaffView(ctx.guild.id))
+
+    @app_commands.command(name="configticketfarm", description="Configura o sistema de farm")
+    async def configticketfarm(
+        self,
+        interaction: discord.Interaction,
+        meta_aviao: int,
+        meta_membro: int,
+        meta_recrutador: int,
+        meta_gerente: int,
+        categoria_analise: discord.CategoryChannel,
+        canal_aceitos: discord.TextChannel,
+        canal_recusados: discord.TextChannel,
+        canal_adv: discord.TextChannel
+    ):
+        cfg = garantir_config()
+        g = garantir_guild(cfg, interaction.guild.id)
+
+        g["metas"] = {
+            "aviãozinho": meta_aviao,
+            "membro": meta_membro,
+            "recrutador": meta_recrutador,
+            "gerente": meta_gerente
+        }
+
+        g["categoria_analise"] = categoria_analise.id
+        g["canal_aceitos"] = canal_aceitos.id
+        g["canal_recusados"] = canal_recusados.id
+        g["canal_logs_adv"] = canal_adv.id
+
+        salvar_config(cfg)
+        await interaction.response.send_message("✅ Configuração concluída.", ephemeral=True)
+
+    @app_commands.command(name="addcargo", description="Adiciona ou atualiza a meta de um cargo")
+    async def addcargo(
+        self,
+        interaction: discord.Interaction,
+        cargo: discord.Role,
+        meta: int
+    ):
+        cfg = garantir_config()
+        g = garantir_guild(cfg, interaction.guild.id)
+
+        g["metas"][cargo.name] = meta
+        salvar_config(cfg)
+
+        await interaction.response.send_message(
+            f"✅ Cargo *{cargo.name}* configurado com meta *{meta}*.",
+            ephemeral=True
+        )
 
 # ======================================================
 # SETUP
