@@ -196,9 +196,45 @@ class PainelFarmView(discord.ui.View):
 # PAINEL STAFF
 # ======================================================
 class PainelStaffView(discord.ui.View):
-    def __init__(self, guild_id):
-        super().__init__(timeout=None)
+    def _init_(self, guild_id):
+        super()._init_(timeout=None)
         self.guild_id = guild_id
+
+    @discord.ui.button(label="📦 Ver Entregas", style=discord.ButtonStyle.gray)
+    async def ver_entregas(self, interaction: discord.Interaction, _):
+        cfg = garantir_config()
+        g = garantir_guild(cfg, self.guild_id)
+
+        embed = discord.Embed(title="📦 Entregas Aceitas (Semana)", color=discord.Color.green())
+
+        if not g["entregas_aceitas"]:
+            embed.description = "Nenhuma entrega aceita."
+        else:
+            for e in g["entregas_aceitas"]:
+                embed.add_field(name=e["membro"], value=f"{e['cargo']} • {e['quantidade']}", inline=False)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="⚠️ Ver ADV", style=discord.ButtonStyle.red)
+    async def ver_adv(self, interaction: discord.Interaction, _):
+        cfg = garantir_config()
+        g = garantir_guild(cfg, self.guild_id)
+
+        embed = discord.Embed(title="⚠️ ADV Ativos", color=discord.Color.red())
+        if not g["adv_ativos"]:
+            embed.description = "Nenhuma advertência."
+        else:
+            for adv in g["adv_ativos"].values():
+                embed.add_field(name=adv["nome"], value=f"{adv['quantidade']}/5", inline=False)
+
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    @discord.ui.button(label="⏭️ Próximo ADV", style=discord.ButtonStyle.blurple)
+    async def proximo(self, interaction: discord.Interaction, _):
+        cfg = garantir_config()
+        g = garantir_guild(cfg, self.guild_id)
+        alvo = proximo_adv(g["adv_agendado"])
+        await interaction.response.send_message(f"{alvo.strftime('%d/%m %H:%M')}\n{cronometro(g['adv_agendado'])}", ephemeral=True)
 
     @discord.ui.button(label="🗓️ Agendar ADV", style=discord.ButtonStyle.green)
     async def agendar(self, interaction: discord.Interaction, _):
@@ -208,9 +244,17 @@ class PainelStaffView(discord.ui.View):
     async def cancelar(self, interaction: discord.Interaction, _):
         cfg = garantir_config()
         g = garantir_guild(cfg, self.guild_id)
-        g["adv_agendado"]["data"] = None
+
+        g["adv_agendado"] = {
+            "ativo": True,
+            "weekday": 6,
+            "hora": 0,
+            "minuto": 0,
+            "ultima_execucao": None
+        }
+
         salvar_config(cfg)
-        await interaction.response.send_message("✅ Agendamento cancelado. Domingo voltou ao padrão.", ephemeral=True, delete_after=5)
+        await interaction.response.send_message("✅ Agendamento cancelado. Domingo voltou a ser o padrão.", ephemeral=True)
 
 # ======================================================
 # COG
