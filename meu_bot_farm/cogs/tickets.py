@@ -61,6 +61,45 @@ def cronometro(ag):
     m, _ = divmod(r, 60)
     return f"⏳ {d}d {h}h {m}m restantes"
 
+    # ======================================================
+# LOOP AUTOMÁTICO ADV (ADICIONADO)
+# ======================================================
+async def executar_adv(bot, guild_id):
+    cfg = garantir_config()
+    g = garantir_guild(cfg, guild_id)
+
+    # Reset semanal
+    g["entregas_semana"].clear()
+    g["entregas_aceitas"].clear()
+
+    # Log
+    canal = bot.get_channel(g["canal_logs_adv"])
+    if canal:
+        embed = discord.Embed(
+            title="⚠️ ADV EXECUTADO",
+            description="O ADV semanal foi executado automaticamente.\nEntregas resetadas.",
+            color=discord.Color.red(),
+            timestamp=datetime.now()
+        )
+        await canal.send(embed=embed)
+
+    # Volta para domingo padrão
+    g["adv_agendado"]["data"] = None
+    salvar_config(cfg)
+
+@tasks.loop(minutes=1)
+async def loop_adv(bot):
+    cfg = garantir_config()
+    agora = datetime.now()
+
+    for gid, g in cfg["guilds"].items():
+        if not g["adv_agendado"]["data"]:
+            continue
+
+        data_adv = datetime.fromisoformat(g["adv_agendado"]["data"])
+        if agora >= data_adv:
+            await executar_adv(bot, int(gid))
+
 # ======================================================
 # MODAL ENTREGA
 # ======================================================
@@ -262,6 +301,8 @@ class PainelStaffView(discord.ui.View):
 class Tickets(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        if not loop_adv.is_running():
+            loop_adv.start(bot)
 
     @commands.command()
     async def painelfarm(self, ctx):
